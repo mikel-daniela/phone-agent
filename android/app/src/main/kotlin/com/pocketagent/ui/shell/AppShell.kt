@@ -583,7 +583,14 @@ fun AppShell(
     //     同一个 `SessionDrawer`，两份列表：聊天页看全部会话，
     //     工作台只看工作台建的那些。共用一份的后果是 ——
     //     点开"工作历史"，摊在第一位的是昨晚那段角色扮演。
-    val drawerVm = if (currentRoute == Routes.WORKBENCH) workbenchViewModel else tasksViewModel
+    // ★ 2026-11-21：三个模式各看各的历史。原来只有工作台分了出去，在场落到了
+    //   聊天那头 —— 在场页里点"历史"，改的是在场 VM 的 drawerOpen，而抽屉盯的是
+    //   聊天 VM，于是**点了没反应**（用户报的"在场的历史对话打不开"）。
+    val drawerVm = when (currentRoute) {
+        Routes.WORKBENCH -> workbenchViewModel
+        Routes.LIFEFORM -> lifeformViewModel
+        else -> tasksViewModel
+    }
 
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     LaunchedEffect(drawerVm.drawerOpen) {
@@ -591,7 +598,9 @@ fun AppShell(
     }
     // ⚠️ 手势只在任务页开启：设置页、插件页往右滑也会拉出抽屉，
     //    而那里的用户预期是"返回上一页"（边缘返回手势）。
-    val drawerGestures = currentRoute == Routes.TASKS || currentRoute == Routes.WORKBENCH
+    val drawerGestures = currentRoute == Routes.TASKS ||
+        currentRoute == Routes.WORKBENCH ||
+        currentRoute == Routes.LIFEFORM
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -612,18 +621,33 @@ fun AppShell(
                         drawerVm.deleteSession(id)
                         // ⚠️ 顺手把工作历史索引里的那条也去掉 ——
                         //    留着的话它会一直躺在集合里，而会话已经不在了。
-                        if (currentRoute == Routes.WORKBENCH) container.forgetWorkSession(id)
+                        when (currentRoute) {
+                            Routes.WORKBENCH -> container.forgetWorkSession(id)
+                            Routes.LIFEFORM -> container.forgetLifeformSession(id)
+                        }
                     },
                     onSearch = { drawerVm.refreshSessions(it) },
                     // 工作台里建的是「工作」，不是「对话」。
-                    newSessionLabel = if (currentRoute == Routes.WORKBENCH) "新工作" else "新对话",
-                    searchHint = if (currentRoute == Routes.WORKBENCH) "搜索工作…" else "搜索对话…",
-                    emptyTitle = if (currentRoute == Routes.WORKBENCH) {
-                        "这里还空着。\n说一句，我这就开始。"
-                    } else {
-                        "还没有对话。\n说一句话开始。"
+                    newSessionLabel = when (currentRoute) {
+                        Routes.WORKBENCH -> "新工作"
+                        Routes.LIFEFORM -> "新的一段"
+                        else -> "新对话"
                     },
-                    noun = if (currentRoute == Routes.WORKBENCH) "工作" else "对话",
+                    searchHint = when (currentRoute) {
+                        Routes.WORKBENCH -> "搜索工作…"
+                        Routes.LIFEFORM -> "搜索在场…"
+                        else -> "搜索对话…"
+                    },
+                    emptyTitle = when (currentRoute) {
+                        Routes.WORKBENCH -> "这里还空着。\n说一句，我这就开始。"
+                        Routes.LIFEFORM -> "还没有记录。\n说一句，这一段就开始了。"
+                        else -> "还没有对话。\n说一句话开始。"
+                    },
+                    noun = when (currentRoute) {
+                        Routes.WORKBENCH -> "工作"
+                        Routes.LIFEFORM -> "记录"
+                        else -> "对话"
+                    },
                     // ══════════════════════════════════════════════════
                     //  ★★ 2026-10-31：插件 / 设置搬进抽屉右下角
                     // ══════════════════════════════════════════════════

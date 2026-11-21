@@ -2251,6 +2251,13 @@ class TasksViewModel(
                     // ★ 工作台只看**自己建的**会话。不加这一层过滤的话，
                     //   点开"工作历史"，摊在第一位的是昨晚那段角色扮演。
                     val mine = workSessions()
+                    Timber.i(
+                        "历史会话明细（%s）：%s",
+                        sessionMode,
+                        fresh.joinToString("；") {
+                            "${it.id.take(6)}|轮${it.turnCount}|${if (it.id in mine) "已登记" else "未登记"}|${(it.title ?: "").take(10)}"
+                        },
+                    )
                     fresh
                         .filter { sessionMode == SessionEntity.MODE_ROLEPLAY || it.id in mine || it.id == cur }
                         .filter { it.turnCount > 0 || it.id == cur }
