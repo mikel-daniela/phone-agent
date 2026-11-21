@@ -71,10 +71,12 @@ enum class ComposerAction(
     //    它真的打开 `CallScreen`（一整屏，见 `ui/call/CallScreen.kt`），
     //    状态由 `agentui/VoiceCall` 的状态机管（含随时打断）。
     VOICE_CALL("语音通话", Icons.Default.Call, wired = true),
-    // ⚠️ 视频通话**没有接**，而且不是"差一个按钮"：本应用至今没有任何相机管线
-    //    （无 CameraX、无 CAMERA 权限、无预览/编码），所以这里只能如实说清楚缺什么，
-    //    而不是给一个点开是空画面的假页面。
-    VIDEO_CALL("视频通话", Icons.Default.Videocam, wired = false, pendingNote = "视频通话还需要相机管线（相机权限、预览、视频上传），这个版本没有。先用语音通话。"),
+    // ★★ 2026-11-21：视频通话**接通了**。
+    //    相机管线用老的 `android.hardware.Camera`（理由见 `ui/call/CameraStill.kt` 的
+    //    KDoc：CameraX 要联网拉四个 aar，会让离线构建不再成立）。
+    //    ⚠️ 它不是实时视频流：**你说话的那一刻抓一帧**给模型看 —— 多数厂商没有
+    //    流式视觉接口，实时推流等于每轮上传几十帧，代价和收益都不划算。
+    VIDEO_CALL("视频通话", Icons.Default.Videocam, wired = true),
     // ★ 屏幕共享**接通了**：截一张此刻的屏幕，直接落到输入框的图片附件上。
     //    用户看得见自己要发什么，发不发由他决定 —— 与"让角色偷偷看屏幕"
     //    是两件不同的事，后者只有工具调用里的 `screen_shot` 会做（且受隐私关卡约束）。

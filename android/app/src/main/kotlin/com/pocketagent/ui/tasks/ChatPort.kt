@@ -179,6 +179,14 @@ interface ChatPort {
          *   null = 调用方也不知道（预览、测试），此时才退回全局解析。
          */
         sessionId: String? = null,
+        /**
+         * 这一轮按哪个场景取思考档（覆盖"有没有图"的默认推断）。
+         *
+         * ★ 2026-11-21：通话页要显式传 [com.pocketagent.modelrouter.EffortScene.CALL]
+         *   —— 它没有图，会被默认推断成 CHAT，而两者推荐值恰好都是最低档；
+         *   显式的意义在**用户改过拉条之后**：那时 CALL 也该按通话的理由取。
+         */
+        effortScene: com.pocketagent.modelrouter.EffortScene? = null,
     ): ChatResult
 }
 
@@ -300,6 +308,7 @@ class ContainerChatPort(private val container: AppContainer) : ChatPort {
         mode: com.pocketagent.personalogic.ChatMode,
         /** 见接口侧同名参数（2026-11-05：端口不再猜"写进哪个会话"）。 */
         sessionId: String?,
+        effortScene: com.pocketagent.modelrouter.EffortScene?,
     ): ChatResult {
         // ── ⓪ 用户重新开口 ⇒ 解除上一轮的「按停」 ────────────────
         //
@@ -577,6 +586,20 @@ class ContainerChatPort(private val container: AppContainer) : ChatPort {
     //   聊天页不做 —— 那里的 `/work` 是角色自己的草稿纸。
     if (chatMode.isWork) runCatching { container.syncWorkspace("进模型前") }
 
+    /**
+     * 这一轮该用几档思考 —— **按场景**，不是按全局开关。
+     *
+     * ★★ 2026-11-21：带图这一轮按「屏幕共享」走（厂商侧 medium），
+     *   其余按聊天/通话的最低档。用户亲手改过拉条时以他为淮
+     *   （见 `AppContainer.effortFor`）。
+     *
+     * ⚠️ 必须在 `useKey` **外面**算：agent 分支与 chat 分支都要用它，
+     *   而 `useKey` 的 lambda 是另一个作用域。
+     */
+    val effectiveEffortScene = effortScene ?: com.pocketagent.modelrouter.EffortScene.of(
+        hasImage = image != null && image.isNotEmpty(),
+    )
+
     val text = try {
         store.useKey(config.credentialId) { provider, credential ->
             // ── 纯对话：一次性请求，零工具 ────────────────────
@@ -646,6 +669,9 @@ class ContainerChatPort(private val container: AppContainer) : ChatPort {
                 )
                 return@useKey chatOnly(
                     provider, credential, model, historyWithImage, systemWithMemory, onDelta,
+                    // ★ 带图这一轮按「屏幕共享」档走（厂商侧 medium）——
+                    //   图里可能是整屏界面，用最低档它只能猜。
+                    effortScene = effectiveEffortScene,
                 )
             }
             // ★ 按**实际生效的模式**取工具集，不是全量：
@@ -693,7 +719,7 @@ class ContainerChatPort(private val container: AppContainer) : ChatPort {
                         credential = credential,
                         model = model,
                         pendingImage = { container.virtualScreenHost.takePendingImage() },
-                        reasoningEffort = container.thinkingEffort().wireValue,
+                        reasoningEffort = container.effortFor(effectiveEffortScene).wireValue,
                     ),
                 ).handle(userText)
                 // ⚠️ [2026-11-04] 不能写 `reply.spoken` —— `spoken` 只在
@@ -723,7 +749,10 @@ class ContainerChatPort(private val container: AppContainer) : ChatPort {
                     // ★★ 2026-11-01：**agent 路径也看滑块**
                     //   此前只有聊天路径传思考强度，于是"同一个拉条，
                     //   聊天会思考、干活不会" —— 界面上看不出来。
-                    reasoningEffort = container.thinkingEffort().wireValue,
+                    //
+                    // ★★ 2026-11-21：改成按**场景**取（见 `EffortAdvice`）——
+                    //   干活这一轮多半是读界面，跟屏幕共享同档才合理。
+                    reasoningEffort = container.effortFor(effectiveEffortScene).wireValue,
                 ),
                 runner = AgentAdapters.toolRunner(tools),
                 budgetGuard = BudgetGuard(AgentBudget(maxTurns = CHAT_MAX_TURNS)),
@@ -1089,9 +1118,13 @@ class ContainerChatPort(private val container: AppContainer) : ChatPort {
         history: List<ChatMessage>,
         system: String,
         onDelta: (String) -> Unit = {},
+        effortScene: com.pocketagent.modelrouter.EffortScene = com.pocketagent.modelrouter.EffortScene.CHAT,
     ): String? {
         val armed = container.shouldArmorEngage()
-        val first = chatOnce(provider, credential, model, history, system, onDelta, hold = armed)
+        val first = chatOnce(
+            provider, credential, model, history, system, onDelta,
+            hold = armed, effortScene = effortScene,
+        )
 
         // 没开启破甲 / 没检测到退让 ⇒ 原样返回（零额外成本）
         if (!armed) return first
@@ -1122,6 +1155,7 @@ class ContainerChatPort(private val container: AppContainer) : ChatPort {
             //   因为这一次同样可能退让 —— 我们不能第二次还让用户看见。
             onDelta = onDelta,
             hold = true,
+            effortScene = effortScene,
         )
 
         // 重试仍是退让 ⇒ 如实返回它（有内容总比空着好），但要记下来。
@@ -1151,6 +1185,7 @@ class ContainerChatPort(private val container: AppContainer) : ChatPort {
         system: String,
         onDelta: (String) -> Unit,
         hold: Boolean,
+        effortScene: com.pocketagent.modelrouter.EffortScene = com.pocketagent.modelrouter.EffortScene.CHAT,
     ): String? {
         // ⚠️ tools 传空列表（不是 null）：`ChatRequest` 的默认值就是 emptyList，
         //    而传 null 需要它可空。空列表在这里的语义是"明确不提供工具"。
@@ -1165,7 +1200,7 @@ class ContainerChatPort(private val container: AppContainer) : ChatPort {
             //
             // ⚠️ 发不发由 Provider 决定（`supportsReasoningEffort`）：
             //    不支持的厂商会忽略这个字段，而不是 400。
-            reasoningEffort = container.thinkingEffort().wireValue,
+            reasoningEffort = container.effortFor(effortScene).wireValue,
         )
 
         val sb = StringBuilder()

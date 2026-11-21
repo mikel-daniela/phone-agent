@@ -271,6 +271,8 @@ fun TasksScreen(
      *   打电话时用户不看屏幕，屏幕上不该有大量他不需要读的文字。
      */
     onOpenCall: (() -> Unit)? = null,
+    /** 视频通话（带摄像头）。null = 这个入口还没接，点了会走 pendingNote。 */
+    onOpenVideoCall: (() -> Unit)? = null,
 
     /**
      * 输入框上「屏幕共享」的实现：截一张此刻的屏幕，交给输入框当图片附件。
@@ -722,7 +724,13 @@ fun TasksScreen(
                                     }
                                 }
                                 // ★★ 2026-10-31：语音通话接通 —— 真的进通话页。
-                                ComposerAction.VOICE_CALL -> {
+                                ComposerAction.VIDEO_CALL -> {
+                                actionHint = null
+                                actionsExpanded = false
+                                onOpenVideoCall?.invoke()
+                            }
+
+                            ComposerAction.VOICE_CALL -> {
                                     actionHint = null
                                     actionsExpanded = false
                                     onOpenCall?.invoke()

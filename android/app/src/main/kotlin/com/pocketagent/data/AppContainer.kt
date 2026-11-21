@@ -2807,9 +2807,23 @@ class AppContainer(context: Context) {
      */
     private var pinnedModelIdValue: String = ""
 
-    /** 思考强度。默认 [com.pocketagent.modelrouter.ThinkingEffort.HIGH]。 */
+    /**
+     * 思考强度。
+     *
+     * ★★ 2026-11-21：默认值从 `HIGH` 改成**最低档**。
+     *
+     * 用户原话：「全部模型无论是什么全部默认是最低的思考等级 …… 电话
+     * 响应速度一定要快，屏幕共享默认是中等的思考等级，其实这些都是
+     * 可以让用户自己去修改的，但我们需要有一个推荐的思考等级进去」。
+     *
+     * ⚠️ 这里的值只在**用户真的动过拉条**之后才有意义 ——
+     *    没动过时各场景按 [EffortAdvice] 的推荐走（见 [effortFor]）。
+     */
     private var thinkingEffortValue: com.pocketagent.modelrouter.ThinkingEffort =
-        com.pocketagent.modelrouter.ThinkingEffort.HIGH
+        com.pocketagent.modelrouter.EffortAdvice.DEFAULT
+
+    /** 用户是否**亲手**选过思考强度（选过之后推荐值就不再插手）。 */
+    private var thinkingEffortTouched: Boolean = false
 
     /** 当前的选择（自动 / 钉死某个）。 */
     fun modelChoice(): com.pocketagent.modelrouter.ModelChoice =
@@ -2818,7 +2832,21 @@ class AppContainer(context: Context) {
         }?.let { com.pocketagent.modelrouter.ModelChoice.Pinned(it) }
             ?: com.pocketagent.modelrouter.ModelChoice.Auto
 
+    /** 用户自己那一档（没动过时就是默认的最低档）。界面拉条显示这个。 */
     fun thinkingEffort(): com.pocketagent.modelrouter.ThinkingEffort = thinkingEffortValue
+
+    /**
+     * **这一轮该用几档思考** —— 场景优先，用户的显式选择覆盖推荐。
+     *
+     * ⚠️ 为什么不让调用方直接读 [thinkingEffort]：
+     *   那样"屏幕共享要中等"这条推荐就没人执行 —— 用户不动拉条时，
+     *   看图那一轮也会用最低档，模型只能猜屏幕上写了什么。
+     */
+    fun effortFor(scene: com.pocketagent.modelrouter.EffortScene): com.pocketagent.modelrouter.ThinkingEffort =
+        com.pocketagent.modelrouter.EffortAdvice.resolve(
+            scene,
+            if (thinkingEffortTouched) thinkingEffortValue else null,
+        )
 
     /**
      * 用户切了模型。`null` = 切回自动。
@@ -2836,6 +2864,7 @@ class AppContainer(context: Context) {
 
     fun setThinkingEffort(effort: com.pocketagent.modelrouter.ThinkingEffort) {
         thinkingEffortValue = effort
+        thinkingEffortTouched = true
         persistModelSelection()
     }
 
@@ -2925,13 +2954,16 @@ class AppContainer(context: Context) {
             pinnedModelIdValue = prefs[KEY_PINNED_MODEL_ID].orEmpty()
             // ⚠️ 用 `enumValueOf` + runCatching：枚举改名/新增时老值读不出来，
             //    此时退回 AUTO 而不是崩溃 —— 一个存了旧值的用户不该打不开应用。
+            // ★ 2026-11-21：读回来了就说明用户**亲手选过** —— 否则推荐值
+            //   会把他选的那一档盖掉（屏幕共享那一轮尤其明显）。
             thinkingEffortValue = prefs[KEY_THINKING_EFFORT]
                 ?.let { name ->
                     runCatching {
                         com.pocketagent.modelrouter.ThinkingEffort.valueOf(name)
                     }.getOrNull()
                 }
-                ?: com.pocketagent.modelrouter.ThinkingEffort.HIGH
+                ?.also { thinkingEffortTouched = true }
+                ?: com.pocketagent.modelrouter.EffortAdvice.DEFAULT
         }.onFailure { Timber.e(it, "模型选择读取失败") }
     }
 
@@ -3802,6 +3834,35 @@ class AppContainer(context: Context) {
         com.pocketagent.assistant.VoiceRecorder(appContext)
     }
 
+    /**
+     * 听一段话（通话页用）。
+     *
+     * ⚠️ 工具表里那个 `asrPort` 是**函数内的局部变量**（只给 `ListenTool` 用），
+     *   通话页拿不到它 —— 所以这里单独持有一个实例。
+     *   两个 `SpeechRecognizer` 不会同时开（工具那条只在模型主动调用时走），
+     *   但为了不让"通话中模型又调 listen"打架，这里串行化。
+     */
+    private val callAsr: com.pocketagent.mcp.AsrPort by lazy {
+        AndroidAsrPort(appContext)
+    }
+
+    private val callAsrMutex = kotlinx.coroutines.sync.Mutex()
+
+    /** 听一格（空串 = 没听到）。 */
+    suspend fun listenOnce(maxMillis: Long): String =
+        callAsrMutex.withLock { callAsr.listen(maxMillis) }
+
+    /**
+     * 相机权限是否已授予（视频通话用）。
+     *
+     * ⚠️ 与 [hasMicPermission] 分开：语音通话不该因为没给相机就开不了。
+     */
+    fun hasCameraPermission(): Boolean =
+        androidx.core.content.ContextCompat.checkSelfPermission(
+            appContext,
+            android.Manifest.permission.CAMERA,
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
     /** 麦克风权限是否已授予（界面用来决定要不要先要权限）。 */
     fun hasMicPermission(): Boolean =
         appContext.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) ==
@@ -3858,6 +3919,27 @@ class AppContainer(context: Context) {
     fun stopSpeaking() {
         runCatching { ttsSpeaker.stop() }
             .onFailure { Timber.w(it, "停止播报失败") }
+    }
+
+    /**
+     * 念一段并**等它念完**。
+     *
+     * ⚠️ 与 [speakAsync] 的差别只有一个：那个是 fire-and-forget，这个会返回。
+     *   通话页需要它 —— 说完才能回到"继续听"，否则两件事会重叠
+     *   （它还在说，麦克风已经开了，于是听见自己）。
+     *
+     * @return 真的念了至少一段
+     */
+    suspend fun speakBlocking(text: String): Boolean {
+        val clean = spokenForm(text)
+        if (clean.isBlank()) return false
+        prefetchVoice(clean)
+        var played = false
+        for (clip in voiceNoteStore.plan(clean)) {
+            if (!playVoiceClip(clip.text)) break
+            played = true
+        }
+        return played
     }
 
     /**

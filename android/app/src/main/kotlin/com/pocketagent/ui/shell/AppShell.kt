@@ -142,6 +142,15 @@ object Routes {
      */
     const val CALL = "call"
 
+    /**
+     * **视频通话** —— 和 [CALL] 同一个状态机，多一路前置摄像头。
+     *
+     * ★ 2026-11-21：用户要求"相机权限没有的话就加入授权按钮"。
+     *   ⚠️ 单独一条路由而不是给 [CALL] 加个参数：返回栈要能分开
+     *      （视频页按返回该退回聊天，不是退回语音页）。
+     */
+    const val VIDEO_CALL = "video-call"
+
     // ── 二级页面（隐藏底部导航）──────────────────────────
     const val MARKET = "market"
     const val IMPORT = "import"
@@ -826,6 +835,7 @@ fun AppShell(
                         // ★★ 2026-10-31：语音通话入口。
                         //   它从"还没接上"的占位变成了真的路由。
                         onOpenCall = { navController.navigate(Routes.CALL) },
+            onOpenVideoCall = { navController.navigate(Routes.VIDEO_CALL) },
 
                         // ══════════════════════════════════════════════
                         //  ★★ 2026-11-01：模型快捷切换 + 思考强度
@@ -1149,7 +1159,15 @@ fun AppShell(
                 //    唯一的出口是那个红色挂断按钮。
                 //    理由：通话时"返回"这个动作会让人以为"退出去但还在通话"，
                 //    而实际是挂断。把出口做成唯一一个明确动作，不产生歧义。
-                composable(Routes.CALL) {
+                composable(Routes.VIDEO_CALL) {
+                com.pocketagent.ui.call.CallRouteHost(
+                    container = container,
+                    onHangUp = { navController.popBackStack() },
+                    video = true,
+                )
+            }
+
+            composable(Routes.CALL) {
                     CallRouteHost(
                         container = container,
                         onHangUp = { navController.popBackStack() },

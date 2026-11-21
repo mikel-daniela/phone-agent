@@ -70,6 +70,13 @@ fun CallScreen(
     modifier: Modifier = Modifier,
     /** 已播出的文本（显示在动效下方，让用户能回看）。 */
     spokenText: String = "",
+    /**
+     * 需要用户知道的一句实情（没麦克风权限 / 没语音 Key / 请求失败）。
+     *
+     * ⚠️ 与 [spokenText] 分开：那个是"它说了什么"，这个是
+     *   "为什么这通电话不对劲"。混在一起会让用户以为角色在抱怨。
+     */
+    subtitle: String = "",
     volume: Float = 0.5f,
     onInterrupt: () -> Unit = {},
     onReplay: () -> Unit = {},
@@ -103,6 +110,20 @@ fun CallScreen(
                 style = PaType.caption,
                 color = Color(0xFF8A93A6),
             )
+
+            // ── 故障提示（红系，但压暗，免得像报错弹窗） ─────────
+            if (subtitle.isNotBlank()) {
+                Spacer(Modifier.height(PaSpace.s))
+                Text(
+                    text = subtitle,
+                    style = PaType.caption,
+                    color = Color(0xFFE5A0A0),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = PaSpace.m),
+                )
+            }
 
             // ── 动效区（占屏幕中央最大一块） ────────────────────
             Box(

@@ -69,6 +69,24 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <!--
+        ★ 2026-11-21：视频通话要「看得见」。
+
+        ⚠️ 只声明权限不够 —— 运行时还必须申请（见 CallRouteHost 里的
+           ensureCameraPermission），用户拒绝了要能解释清楚为什么需要它，
+           而不是弹一个系统框就算了。
+
+        ⚠️ required="false"：没有摄像头的设备（少数平板/模拟器）仍要能装、
+           能打电话，只是不能开视频。设成 true 会直接从应用商店消失。
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.camera.front"
+        android:required="false" />
+
+    <!--
     ── 以下仍为 M1+ 目标配置，随功能落地逐项启用 ─────────────────
 
     ⚠️ 块内注释纪律（踩过一次真 bug）：

@@ -100,6 +100,24 @@ fun ModelPickerSheet(
             style = PaType.caption,
             color = PaColor.TextTertiary,
         )
+        // ★★ 2026-11-21：用户要求「需要有一个推荐的思考等级进去」。
+        //   ⚠️ 只在跟推荐值不一致时才换成"为什么建议"那句 ——
+        //      一致时再喊一遍推荐，会像个没生效的提示。
+        val tip = com.pocketagent.modelrouter.EffortAdvice.note(
+            com.pocketagent.modelrouter.EffortScene.CHAT,
+            effort,
+        )
+        Text(
+            text = tip,
+            style = PaType.caption,
+            color = if (effort == com.pocketagent.modelrouter.EffortAdvice
+                    .recommended(com.pocketagent.modelrouter.EffortScene.CHAT)
+            ) {
+                PaColor.TextTertiary
+            } else {
+                PaColor.Warning
+            },
+        )
 
         Spacer(Modifier.height(PaSpace.l))
 

@@ -1,7 +1,6 @@
 package com.pocketagent.ui.tasks
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -36,12 +35,21 @@ class ComposerActionTest {
     }
 
     @Test
-    fun `屏幕共享与语音通话是接通的，视频通话不是`() {
+    fun `通话与屏幕共享都已接通`() {
         assertTrue(ComposerAction.SCREEN_SHARE.wired)
         assertTrue(ComposerAction.VOICE_CALL.wired)
-        // 视频通话要相机管线（权限 + 预览 + 编码），这个版本没有 —— 必须如实为假。
-        assertFalse(ComposerAction.VIDEO_CALL.wired)
-        assertTrue(ComposerAction.VIDEO_CALL.pendingNote.contains("相机"))
+        // ★ 2026-11-21：视频通话接通了 —— 相机管线走老的 hardware.Camera，
+        //   权限在通话页运行时申请。所以这里断言它**不再**是占位。
+        assertTrue(ComposerAction.VIDEO_CALL.wired)
+        assertEquals("", ComposerAction.VIDEO_CALL.pendingNote)
+    }
+
+    @Test
+    fun `只有一个入口还没接通 —— 语音输入`() {
+        // 这条是"接线债"的账本：数字变了就说明有人推进了或退回了。
+        // 现在只剩语音输入（要先把输入框那条 STT 路接上）。
+        val notWired = ComposerAction.entries.filter { !it.wired }.map { it.name }
+        assertEquals(listOf("AUDIO"), notWired)
     }
 
     @Test
