@@ -1445,6 +1445,55 @@ class AppContainer(context: Context) {
     /** 设置页的「超级网络权限」开关。 */
     fun superNetwork(): Boolean = superNetworkValue
 
+    /**
+     * 截一张"此刻的屏幕"，给输入框上的「屏幕共享」用。
+     *
+     * 与 `screen_shot` 工具走**同一套关卡**（`PrivacyFilter` 审 → `A11yScreenShotPort` 采），
+     * 差别只在出口：工具把图交回模型，这里把图交回用户自己的输入框，
+     * 由用户决定要不要发出去。
+     *
+     * ⚠️ `providerId` 传本应用包名而不是模型标识：决定策略的是**截图发生在哪个页面**。
+     * ⚠️ `SystemUiProbe.detect` 每次现量：`systemUi` 是屏幕坐标，转屏后旧值会让该裁的没裁。
+     */
+    suspend fun captureScreenForShare(): com.pocketagent.agentui.ScreenShareResult {
+        val review = runCatching {
+            com.pocketagent.agentlogic.PrivacyFilter(
+                systemUi = SystemUiProbe.detect(appContext),
+            ).review(
+                com.pocketagent.agentlogic.UploadRequest(
+                    context = com.pocketagent.agentlogic.UploadContext(
+                        providerId = appContext.packageName,
+                        purpose = com.pocketagent.agentlogic.UploadPurpose.VISUAL_QA,
+                    ),
+                    requiresScreenshot = true,
+                ),
+            )
+        }.getOrElse { error ->
+            Timber.w(error, "屏幕共享：隐私审查抛异常")
+            return com.pocketagent.agentui.ScreenShareResult.No("截图前的隐私检查出错了：${error.javaClass.simpleName}")
+        }
+        val plan = when (review) {
+            is com.pocketagent.agentlogic.FilterOutcome.Dropped ->
+                return com.pocketagent.agentui.ScreenShareResult.No(
+                    "这个页面不适合截给别人看（${review.reason}）。先切到别的页面，或者你自己描述一下。",
+                )
+            is com.pocketagent.agentlogic.FilterOutcome.Allowed -> review.plan
+        }
+        val capturer = com.pocketagent.assistant.A11yScreenShotPort {
+            com.pocketagent.assistant.AgentAccessibilityService.instance
+        }
+        return when (val outcome = capturer.capturePng(plan)) {
+            is com.pocketagent.mcp.ScreenShotOutcome.Ok ->
+                com.pocketagent.agentui.ScreenShareResult.Ok(outcome.png)
+            is com.pocketagent.mcp.ScreenShotOutcome.Unavailable ->
+                com.pocketagent.agentui.ScreenShareResult.No(
+                    "截图现在不可用（${outcome.reason}）。要让角色看屏幕，得先在系统设置里给本应用开无障碍服务。",
+                )
+            is com.pocketagent.mcp.ScreenShotOutcome.Failed ->
+                com.pocketagent.agentui.ScreenShareResult.No("截图失败：${outcome.reason}")
+        }
+    }
+
     fun setSuperNetwork(value: Boolean) {
         superNetworkValue = value
         startupScope.launch {

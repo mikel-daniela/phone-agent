@@ -651,8 +651,31 @@ def compile_kotlin(
     return True
 
 
-def run_junit(java: str, lib_cp: list[Path], out_dir: Path, test_classes: list[str]) -> bool:
+def collect_resource_dirs(repo_root: Path) -> list[Path]:
+    """每个模块的 src/main/resources。
+
+    ★ 2026-11-21：不把这里加进 classpath，`getResourceAsStream("/x")` 永远返回 null。
+      表现是「测试在 Gradle 里绿、在离线验证里红」，而红的原因看起来像是
+      「资源没打进包」—— 会把人引到一个不存在的构建问题上。
+    """
+    dirs: list[Path] = []
+    for module in MODULES:
+        res = repo_root / module / "src/main/resources"
+        if res.is_dir():
+            dirs.append(res)
+    return dirs
+
+
+def run_junit(
+    java: str,
+    lib_cp: list[Path],
+    out_dir: Path,
+    test_classes: list[str],
+    resource_dirs: list[Path] | None = None,
+) -> bool:
     step("运行单元测试")
+
+    resource_dirs = resource_dirs or []
 
     if not test_classes:
         warn("没有发现测试类")
@@ -670,7 +693,9 @@ def run_junit(java: str, lib_cp: list[Path], out_dir: Path, test_classes: list[s
         "-Dstderr.encoding=UTF-8",
         "-Dsun.stdout.encoding=UTF-8",
         "-Dsun.stderr.encoding=UTF-8",
-        "-cp", os.pathsep.join([str(out_dir)] + [str(p) for p in lib_cp]),
+        "-cp", os.pathsep.join(
+            [str(out_dir)] + [str(p) for p in lib_cp] + [str(p) for p in resource_dirs]
+        ),
         "org.junit.runner.JUnitCore",
         *test_classes,
     ]
@@ -730,7 +755,10 @@ def main() -> int:
 
     ok = compile_kotlin(java, compiler_cp, lib_cp, plugin, sources, out_dir)
     if ok:
-        ok = run_junit(java, lib_cp, out_dir, test_classes)
+        ok = run_junit(
+            java, lib_cp, out_dir, test_classes,
+            resource_dirs=collect_resource_dirs(repo_root),
+        )
 
     if not args.keep_work and out_dir.exists():
         # ⚠️ **这里也必须走 safe_clean_dir，不能直接 shutil.rmtree**。

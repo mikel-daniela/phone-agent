@@ -273,6 +273,13 @@ fun TasksScreen(
     onOpenCall: (() -> Unit)? = null,
 
     /**
+     * 输入框上「屏幕共享」的实现：截一张此刻的屏幕，交给输入框当图片附件。
+     *
+     * null = 当前环境没有这个能力（详情页/预览），点了会如实说"还没接上"。
+     */
+    onShareScreen: (suspend () -> com.pocketagent.agentui.ScreenShareResult)? = null,
+
+    /**
      * 打开**角色设定**。
      *
      * ★ 2026-10-29 用户的原话："角色卡聊天过程中似乎不能修改角色的设定，
@@ -690,6 +697,29 @@ fun TasksScreen(
                                 ComposerAction.FILE -> {
                                     actionHint = null
                                     pickFile.launch("*/*")
+                                }
+                                // ★ 屏幕共享：真的截一张，落到输入框的图片附件上。
+                                //   ⚠️ 不能塞进 `else`（说"还没接上"）—— 这条链路
+                                //      已经通了（无障碍截图 + 隐私过滤），只是要用户自己点。
+                                ComposerAction.SCREEN_SHARE -> {
+                                    val share = onShareScreen
+                                    if (share == null) {
+                                        actionHint = action.pendingNote
+                                    } else {
+                                        actionHint = "正在截一张…"
+                                        attachScope.launch {
+                                            val result = runCatching { share() }.getOrNull()
+                                            when (result) {
+                                                is com.pocketagent.agentui.ScreenShareResult.Ok -> {
+                                                    vm.attachScreen(result.png)
+                                                    actionHint = "已经把这一屏放进附件，发出去她就能看见。"
+                                                }
+                                                is com.pocketagent.agentui.ScreenShareResult.No ->
+                                                    actionHint = result.reason
+                                                null -> actionHint = "截图时出错了（没能拿到结果）。"
+                                            }
+                                        }
+                                    }
                                 }
                                 // ★★ 2026-10-31：语音通话接通 —— 真的进通话页。
                                 ComposerAction.VOICE_CALL -> {
@@ -2522,6 +2552,26 @@ class TasksViewModel(
      *
      * @param imagePrep 读图器。null = 预览环境（不读，只存路径）
      */
+    /**
+     * 把一屏截图直接当图片附件（不再走 `ImagePrep`）。
+     *
+     * 为什么不用 `attach(uri…)`：截图没有 `content://` URI —— 它在内存里，
+     * 走一遍"存临时文件再读回来"只是为了复用签名，反而多一次 IO 和一次清理。
+     *
+     * ⚠️ 体积上限由 `PreparedImage` 的 `init` 兜底（4MB）；超了直接抛，
+     *    在这里捕获并落成 `prepareError` —— 让用户看到"图太大"而不是闪退。
+     */
+    fun attachScreen(png: ByteArray, mime: String = "image/png") {
+        val prepared = runCatching {
+            com.pocketagent.agentui.Attachments.PreparedImage(bytes = png, mimeType = mime)
+        }.getOrNull()
+        attachment = if (prepared == null) {
+            Attachment(uri = "screen://capture", kind = "图片", prepareError = "这一屏太大（${png.size / 1024}KB），换个界面再截一次")
+        } else {
+            Attachment(uri = "screen://capture", kind = "图片", image = prepared)
+        }
+    }
+
     fun attach(
         uri: String,
         kind: String,

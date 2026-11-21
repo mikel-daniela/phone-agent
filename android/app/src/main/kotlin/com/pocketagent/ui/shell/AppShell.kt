@@ -875,6 +875,7 @@ fun AppShell(
                 onPlayVoice = { clip -> container.playVoiceClip(clip) },
                 onStopVoice = { container.stopVoiceClip() },
                         voiceCanSpeak = container.ttsReady(),
+                        onShareScreen = { container.captureScreenForShare() },
             replyViewMode = container.replyViewMode(),
             onReplyViewMode = { container.setReplyViewMode(it) },
                     )
@@ -1004,6 +1005,7 @@ fun AppShell(
                 onPlayVoice = { clip -> container.playVoiceClip(clip) },
                 onStopVoice = { container.stopVoiceClip() },
                         voiceCanSpeak = container.ttsReady(),
+                        onShareScreen = { container.captureScreenForShare() },
             replyViewMode = container.replyViewMode(),
             onReplyViewMode = { container.setReplyViewMode(it) },
 
@@ -1132,6 +1134,7 @@ fun AppShell(
                 onPlayVoice = { clip -> container.playVoiceClip(clip) },
                 onStopVoice = { container.stopVoiceClip() },
                         voiceCanSpeak = container.ttsReady(),
+                        onShareScreen = { container.captureScreenForShare() },
             replyViewMode = container.replyViewMode(),
             onReplyViewMode = { container.setReplyViewMode(it) },
                     )
