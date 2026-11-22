@@ -102,6 +102,31 @@ KNOWN_FAKE = {
     # 判据是**大小写交替的字母表**（AbCdEfGh...）+ 递增数字 0-9 —— 人手写不出这种串，
     # 也不可能是任何真 Key。这一条由 keylogic 接线那条线引入（同一文件里那段测试）。
     "sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGh",
+
+    # ── 以下为 ApiKeyCatalog.SAMPLES ──────────────────────────────
+    # 那一整张表是**编造的样本**，只为验证「认得出这是谁家的 Key」：形状与长度按各家
+    # 公开格式构造，内容全是 AbCdEfGh... 大小写交替字母表或 0123456789abcdef 循环。
+    # 表上方 KDoc 已写明「样本是编造的，不含任何真实凭据」。逐条列在这里，是因为本脚本
+    # 有意用**精确比对**而不是子串匹配（见 extract_value 的注释）。
+    "sk-ant-AbCdEfGhIjKlMnOpQrStUvWxYz0123",
+    "sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKl",
+    "sk-svcacct-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
+    "sk-admin-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
+    "sk-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIj",
+    # Google API Key 形状（AIza + 35 位）：后面是 A1b2C3... 交替序列
+    "AIzaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q",
+    # 教科书 JWT（jwt.io 首页那个示例载荷 sub=1234567890）
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0"
+    ".dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+
+    # ── 内测激活模块的测试夹具 ────────────────────────────────────
+    # TrialKeyVault / TrialAccessController 要验证「把 Key 装进凭据库再取出来」，
+    # 拿的必须是**看起来像 Key** 的串；内容写成 sk-trial- + 递增数字/字母表。
+    "sk-trial-0123456789abcdefghij",
+    "sk-trial-xyz-0123456789abcdef",
+    # tools/trial/issue_codes.py 自检时用的：验证「发出来的码能被自己的验签器认」，
+    # 与真 Key 无关（它根本不联网）。
+    "sk-selftest-0123456789abcdef",
 }
 
 # ═══════════════════════════════════════════════════════════════
