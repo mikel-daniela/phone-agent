@@ -1,0 +1,813 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PocketAgent · 场景动效分镜台</title>
+<style>
+  :root{
+    --ink:#E8E4DC;
+    --ink-2:#9C958A;
+    --ink-3:#6A645C;
+    --line:rgba(232,228,220,.10);
+    --line-2:rgba(232,228,220,.06);
+    --bg:#0E0E0D;
+    --panel:#151412;
+    --panel-2:#1B1A17;
+    --accent:#C96442;
+    --accent-dim:rgba(201,100,66,.28);
+    --feather:#7E93A8;
+    --paper:#C9A227;
+    --stone:#A8553F;
+    /* 产品（产物侧）配色：与 app 的 PaPalette 一致 */
+    --canvas:#F5F2EC;
+    --canvas-el:#FAF8F4;
+    --p-ink:#1C1A17;
+    --p-ink-2:#6B655C;
+    --p-ink-3:#9A938A;
+    --p-accent:#C96442;
+    --p-accent-text:#A34A28;
+    --p-glass:rgba(255,255,255,.62);
+    --p-border:rgba(28,26,23,.10);
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font:13px/1.5 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+    display:flex;flex-direction:column;overflow:hidden;
+  }
+
+  /* ── 顶栏 ───────────────────────────────────────────── */
+  header{
+    display:flex;align-items:center;gap:24px;
+    padding:0 20px;height:52px;flex:0 0 auto;
+    border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,#141312,#0E0E0D);
+  }
+  .brand{font-size:13px;letter-spacing:.02em;white-space:nowrap}
+  .brand b{font-weight:600}
+  .brand span{color:var(--ink-3);margin-left:8px}
+  .hud{display:flex;align-items:center;gap:14px;margin-left:auto}
+  button{
+    font:inherit;color:var(--ink);background:var(--panel-2);
+    border:1px solid var(--line);border-radius:7px;
+    padding:6px 13px;cursor:pointer;transition:background .14s,border-color .14s,color .14s;
+  }
+  button:hover{background:#232220;border-color:rgba(232,228,220,.2)}
+  button:active{transform:translateY(.5px)}
+  button.primary{background:var(--accent);border-color:transparent;color:#150D0A;font-weight:600}
+  button.primary:hover{background:#D87450}
+  .speed{display:flex;align-items:center;gap:8px;color:var(--ink-2);font-size:12px}
+  input[type=range]{
+    -webkit-appearance:none;appearance:none;height:3px;border-radius:2px;
+    background:rgba(232,228,220,.16);outline:none;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;width:11px;height:11px;border-radius:50%;
+    background:var(--ink);cursor:pointer;
+  }
+  .chk{display:flex;align-items:center;gap:6px;color:var(--ink-2);font-size:12px;cursor:pointer;user-select:none}
+  .chk input{accent-color:var(--accent)}
+
+  /* ── 三栏 ───────────────────────────────────────────── */
+  main{flex:1 1 auto;display:grid;grid-template-columns:216px 1fr 300px;min-height:0}
+
+  /* 左：场景列表 */
+  nav{border-right:1px solid var(--line);overflow-y:auto;padding:12px 10px 24px}
+  nav h3{
+    margin:6px 6px 10px;font-size:10px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--ink-3);font-weight:600;
+  }
+  .beat{
+    display:flex;align-items:baseline;gap:8px;width:100%;text-align:left;
+    padding:7px 9px;margin-bottom:2px;border-radius:7px;border:1px solid transparent;
+    background:transparent;color:var(--ink-2);font-size:12px;cursor:pointer;
+  }
+  .beat:hover{background:var(--panel);color:var(--ink)}
+  .beat.on{background:var(--panel-2);border-color:var(--line);color:var(--ink)}
+  .beat .num{font:10px/1 var(--mono);color:var(--ink-3);width:14px;flex:0 0 auto}
+  .beat.on .num{color:var(--accent)}
+  .beat .ms{margin-left:auto;font:10px/1 var(--mono);color:var(--ink-3)}
+
+  /* 中：舞台 */
+  .stage{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:20px;min-width:0;min-height:0}
+  .phone{
+    width:340px;height:670px;flex:0 0 auto;
+    border-radius:34px;padding:9px;
+    background:linear-gradient(160deg,#2A2825,#161513 60%);
+    box-shadow:0 26px 60px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.05) inset;
+    position:relative;
+  }
+  .screen{
+    position:absolute;inset:9px;border-radius:26px;overflow:hidden;
+    background:var(--canvas);
+    color:var(--p-ink);
+    isolation:isolate;
+  }
+  /* 背景光斑：与 app 的 AuroraBlue/Violet/Teal 对应 */
+  .aurora{position:absolute;border-radius:50%;filter:blur(38px);opacity:.5;pointer-events:none}
+  .a1{width:230px;height:230px;left:-70px;top:-60px;background:rgba(108,140,190,.16)}
+  .a2{width:260px;height:260px;right:-90px;top:180px;background:rgba(150,110,180,.13)}
+  .a3{width:200px;height:200px;left:40px;bottom:-80px;background:rgba(80,160,150,.12)}
+
+  .main-view{position:absolute;inset:0;display:flex;flex-direction:column;padding:16px 16px 14px}
+  .topbar{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--p-ink-2);height:22px}
+  .topbar .logo{width:16px;height:16px;border-radius:5px;background:var(--p-accent);opacity:.85}
+  .topbar .spacer{margin-left:auto;letter-spacing:.1em}
+
+  .headline{
+    font-family:Georgia,"Songti SC","Noto Serif SC",serif;
+    font-size:25px;line-height:1.24;letter-spacing:-.01em;
+    margin:14px 0 12px;color:var(--p-ink);
+  }
+
+  .list{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:10px;overflow:hidden}
+
+  .bubble{
+    align-self:flex-end;max-width:78%;
+    background:var(--p-accent-text);color:#FBF6F2;
+    padding:8px 12px;border-radius:16px 16px 4px 16px;
+    font-size:13px;line-height:1.45;
+  }
+  .think{display:flex;gap:5px;padding:4px 2px;align-items:center}
+  .think i{width:6px;height:6px;border-radius:50%;background:var(--p-ink-3);display:block}
+  .stream{font-size:13px;line-height:1.6;color:var(--p-ink);position:relative}
+  .pen{
+    display:inline-block;width:1.5px;height:14px;background:var(--p-accent);
+    vertical-align:-2px;margin-left:2px;border-radius:1px;
+  }
+  .gap{height:8px}
+
+  .card{
+    position:relative;background:var(--p-glass);
+    border:1px solid var(--p-border);border-radius:16px;
+    padding:12px 13px 13px 17px;
+    box-shadow:0 8px 22px rgba(28,26,23,.10),0 1px 0 rgba(255,255,255,.75) inset;
+    backdrop-filter:blur(14px);
+    overflow:hidden;
+  }
+  .spine{
+    position:absolute;left:0;top:0;bottom:0;width:3px;
+    background:var(--p-accent);border-radius:2px;
+    transform-origin:top center;
+  }
+  .cardhead{display:flex;align-items:center;gap:8px}
+  .cardtitle{font-size:14px;font-weight:600;letter-spacing:-.005em}
+  .badge{
+    margin-left:auto;font:10px/1 var(--mono);letter-spacing:.08em;
+    color:var(--p-accent-text);background:rgba(201,100,66,.12);
+    border:1px solid rgba(201,100,66,.24);
+    padding:3px 6px;border-radius:5px;white-space:nowrap;
+  }
+  .progress{
+    position:absolute;left:0;right:0;top:0;height:2px;
+    background:var(--p-accent);opacity:1;
+    transform-origin:left center;
+  }
+  .cardbody{margin-top:7px;font-size:12.5px;line-height:1.6;color:var(--p-ink-2)}
+  .exits{display:flex;gap:8px;margin-top:10px}
+  .exits button{
+    flex:1;background:transparent;border:1px solid var(--p-border);color:var(--p-ink);
+    border-radius:9px;padding:6px 0;font-size:12px;
+  }
+  .exits button:first-child{background:var(--p-accent);border-color:transparent;color:#241310;font-weight:600}
+  .exits button:last-child{color:var(--p-ink-2)}
+
+  .takeover{
+    background:var(--p-glass);border:1px solid var(--p-border);border-radius:14px;
+    padding:10px 12px;backdrop-filter:blur(14px);
+  }
+  .tkrow{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--p-ink)}
+  .tkdot{width:8px;height:8px;border-radius:50%;background:#B07A24;flex:0 0 auto}
+  .tksub{margin:5px 0 0 16px;font-size:11.5px;line-height:1.5;color:var(--p-ink-3)}
+  .tkactions{display:flex;gap:8px;margin-top:9px}
+  .tkactions button{
+    flex:1;background:transparent;border:1px solid var(--p-border);color:var(--p-ink);
+    border-radius:9px;padding:5px 0;font-size:12px;
+  }
+
+  .resume{
+    align-self:center;font-size:11px;color:var(--p-ink-3);
+    border:1px dashed var(--p-border);border-radius:99px;padding:3px 10px;
+  }
+
+  .composer{
+    display:flex;align-items:center;gap:8px;margin-top:10px;
+    background:var(--p-glass);border:1px solid var(--p-border);
+    border-radius:16px;padding:8px 8px 8px 13px;
+    backdrop-filter:blur(16px);
+    box-shadow:0 4px 14px rgba(28,26,23,.05);
+    transform-origin:center bottom;
+  }
+  .composer .ph{flex:1;font-size:13px;color:var(--p-ink-3)}
+  .send{
+    width:30px;height:30px;border-radius:9px;border:0;flex:0 0 auto;
+    background:var(--p-accent);color:#20120D;font-size:14px;line-height:1;
+    display:grid;place-items:center;cursor:default;
+  }
+
+  /* ── 通话页 ────────────────────────────────────────────
+     三态（呼吸环 / 粒子 / 波形）在真机上是**硬切**，而且都是无限循环 ——
+     它们不进场景表（场景表只描述"有始有终"的转场）。所以这一页的
+     持续动画由 JS 按 CallMotion.kt 的公式实时算，见 animateCall()。
+     ─────────────────────────────────────────────────────── */
+  .callpage{
+    position:absolute;inset:0;display:grid;place-items:center;
+    background:var(--p-canvas);
+    opacity:0;pointer-events:none;
+    transition:opacity .28s cubic-bezier(.16,1,.3,1);
+  }
+  .callpage.show{opacity:1;pointer-events:auto}
+  .callwrap{position:relative;width:240px;height:240px;display:grid;place-items:center}
+  .ring{
+    position:absolute;width:200px;height:200px;border-radius:50%;
+    border:2px solid var(--p-accent);opacity:0;
+  }
+  .ripple{position:absolute;width:150px;height:150px;border-radius:50%;
+    background:rgba(201,100,66,.16);opacity:0}
+  .dots{position:absolute;inset:0}
+  .dots i{position:absolute;left:50%;top:50%;width:5px;height:5px;margin:-2.5px 0 0 -2.5px;
+    border-radius:50%;background:var(--p-accent);opacity:0}
+  .bars{position:absolute;display:flex;align-items:center;gap:5px;height:96px}
+  .bars i{width:3.5px;height:8px;border-radius:2px;background:var(--p-accent);opacity:0}
+  .callstatus{
+    position:absolute;left:0;right:0;bottom:150px;text-align:center;
+    font-family:Georgia,"Songti SC","Noto Serif SC",serif;
+    font-size:18px;color:var(--p-ink);letter-spacing:.01em;
+  }
+  .callhint{
+    position:absolute;left:0;right:0;bottom:126px;text-align:center;
+    font-size:11.5px;color:var(--p-ink-3);letter-spacing:.04em;
+  }
+  .hangup{
+    position:absolute;bottom:44px;left:50%;transform:translateX(-50%);
+    width:52px;height:52px;border-radius:50%;border:none;cursor:default;
+    background:var(--p-accent);color:#241310;font-size:17px;line-height:52px;
+    box-shadow:0 10px 22px rgba(201,100,66,.26);
+  }
+
+  /* 抽屉 */
+  .drawer{
+    position:absolute;inset:0;display:none;
+    background:rgba(28,26,23,.30);
+  }
+  .drawer.show{display:block}
+  .drawerpanel{
+    position:absolute;left:0;top:0;bottom:0;width:76%;
+    background:var(--canvas-el);
+    border-radius:0 20px 20px 0;
+    padding:18px 14px;display:flex;flex-direction:column;gap:6px;
+    box-shadow:18px 0 40px rgba(28,26,23,.18);
+    transform-origin:left center;
+  }
+  .drawerpanel h4{margin:0 0 8px;font-size:15px;font-weight:600}
+  .draweritem{
+    font-size:12.5px;color:var(--p-ink-2);padding:8px 9px;border-radius:9px;
+    background:rgba(28,26,23,.028);
+  }
+  .draweritem.on{color:var(--p-ink);background:rgba(201,100,66,.10)}
+
+  /* 拖动条 */
+  .scrub{width:340px;flex:0 0 auto}
+  .scrub input{width:100%}
+  .scrubmeta{display:flex;justify-content:space-between;font:11px/1 var(--mono);color:var(--ink-3);margin-top:7px}
+  .scrubmeta b{color:var(--ink);font-weight:500}
+
+  /* 右：检视 */
+  aside{border-left:1px solid var(--line);overflow-y:auto;padding:14px;min-height:0}
+  aside h2{
+    margin:2px 0 9px;font-size:10px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--ink-3);font-weight:600;
+  }
+  aside h2:not(:first-child){margin-top:20px}
+  table{width:100%;border-collapse:collapse;font:11px/1.4 var(--mono)}
+  table th{text-align:right;color:var(--ink-3);font-weight:500;padding:2px 4px;border-bottom:1px solid var(--line-2)}
+  table th:first-child{text-align:left}
+  table td{text-align:right;padding:3px 4px;color:var(--ink-2);border-bottom:1px solid var(--line-2);white-space:nowrap}
+  table td:first-child{text-align:left;color:var(--ink)}
+  table tr.dim td{color:var(--ink-3)}
+
+  .lane{display:flex;align-items:center;gap:8px;margin-bottom:5px;cursor:pointer}
+  .lane .nm{width:82px;flex:0 0 auto;font:10px/1.3 var(--mono);color:var(--ink-3);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lane .track{flex:1;position:relative;height:9px;background:rgba(232,228,220,.05);border-radius:2px}
+  .lane .bar2{position:absolute;top:0;bottom:0;border-radius:2px;background:var(--feather);opacity:.85}
+  .lane.paper .bar2{background:var(--paper)}
+  .lane.stone .bar2{background:var(--stone)}
+  .lane .playhead{position:absolute;top:-2px;bottom:-2px;width:1px;background:var(--ink);opacity:.65}
+  .legend{display:flex;gap:12px;margin-top:10px;font-size:10px;color:var(--ink-3)}
+  .legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+  .note{margin-top:14px;font-size:11px;line-height:1.65;color:var(--ink-3)}
+  .note b{color:var(--ink-2);font-weight:500}
+  kbd{
+    font:10px/1 var(--mono);background:var(--panel-2);border:1px solid var(--line);
+    border-radius:4px;padding:2px 4px;color:var(--ink-2);
+  }
+
+  /* 元素"舞台布景"：不属于当前场景的组直接不画 */
+  /* 场景"在场"完全由 JS 写 inline display 控制（见 setGroup），
+     这里**不能**再写 `[data-group]{display:none}` —— 那会把"显示"的组
+     一起吃掉：JS 把 display 设成 '' 是为了回到作者样式（.list{display:flex}
+     这类），而 '=空串' 只是清掉 inline，属性选择器的 none 立刻接管，
+     结果是被点亮的组也看不见。首帧防闪用 visibility 就够了。 */
+  .screen{visibility:hidden}
+  .screen.ready{visibility:visible}
+
+  ::-webkit-scrollbar{width:8px;height:8px}
+  ::-webkit-scrollbar-thumb{background:rgba(232,228,220,.12);border-radius:4px}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><b>PocketAgent</b><span>/ 场景动效分镜台 · Choreography Stage</span></div>
+  <div class="hud">
+    <button id="playBtn" class="primary">播放</button>
+    <button id="replayBtn">重播</button>
+    <label class="speed">速度
+      <input id="speed" type="range" min="0.1" max="2" step="0.05" value="1">
+      <output id="speedOut">1.00×</output>
+    </label>
+    <label class="chk"><input id="animOff" type="checkbox"> 关动画</label>
+    <label class="chk"><input id="eco" type="checkbox"> 省电</label>
+  </div>
+</header>
+
+<main>
+  <nav id="beats"><h3>场景 · Beat</h3></nav>
+
+  <section class="stage">
+    <div class="phone">
+      <div class="screen" id="screen">
+        <div class="aurora a1"></div>
+        <div class="aurora a2"></div>
+        <div class="aurora a3"></div>
+
+        <!-- 主界面 -->
+        <div class="main-view" data-group="main" data-d="flex">
+          <div class="topbar">
+            <span class="logo"></span><span>小口袋</span>
+            <span class="spacer">⌘</span>
+          </div>
+          <div class="headline" data-tg="HEADLINE" data-group="main">今天想做什么？</div>
+          <div class="list" data-tg="MESSAGE_LIST" data-d="flex">
+            <div class="bubble" data-tg="USER_BUBBLE" data-group="bubble">帮我把上周的照片整理一下</div>
+            <div class="think" data-group="think" data-d="flex">
+              <i data-tg="THINK_DOTS" data-multi="3"></i>
+              <i data-tg="THINK_DOTS" data-multi="3"></i>
+              <i data-tg="THINK_DOTS" data-multi="3"></i>
+            </div>
+            <div class="stream" data-tg="STREAM_LINE" data-group="stream">我先看一眼相册<span class="pen" data-tg="PEN_TIP" data-group="stream"></span></div>
+            <div class="gap" data-tg="PARA_GAP" data-group="stream"></div>
+
+            <div class="card" data-tg="CARD" data-group="card">
+              <div class="spine" data-tg="CARD_SPINE" data-group="card"></div>
+              <div class="progress" data-tg="CARD_PROGRESS" data-group="card" data-extent="1"></div>
+              <div class="cardhead">
+                <span class="cardtitle">整理照片</span>
+                <span class="badge" data-tg="CARD_BADGE" data-group="card">等你点头</span>
+              </div>
+              <div class="cardbody" data-tg="CARD_BODY" data-group="card">
+                要动 128 张照片，删掉 12 张重复的。原始文件我会留着。
+              </div>
+              <div class="exits" data-tg="CARD_EXITS" data-group="card" data-d="flex">
+                <button>可以</button><button>算了</button>
+              </div>
+            </div>
+
+            <div class="takeover" data-tg="TAKEOVER_BAR" data-group="takeover">
+              <div class="tkrow"><span class="tkdot"></span><span>它刚才在整理照片</span></div>
+              <div class="tksub">卡在「删掉 12 张重复的」这一步，要你点头才动</div>
+              <div class="tkactions" data-tg="TAKEOVER_ACTIONS" data-group="takeover" data-d="flex">
+                <button>接着来</button><button>看它做了什么</button>
+              </div>
+            </div>
+
+            <div class="resume" data-tg="RESUME_MARK" data-group="resume">已接回上次的位置</div>
+          </div>
+
+          <div class="composer" data-tg="COMPOSER" data-group="main" data-d="flex">
+            <span class="ph">说出你想做的事…</span>
+            <button class="send" data-tg="SEND_ICON" data-group="main">↑</button>
+          </div>
+        </div>
+
+        <!-- 通话页 -->
+        <div class="callpage" id="callPage">
+          <div class="callwrap">
+            <div class="ripple" data-tg="CALL_RIPPLE"></div>
+            <div class="ring" data-tg="CALL_RING" data-multi="3"></div>
+            <div class="ring" data-tg="CALL_RING" data-multi="3"></div>
+            <div class="ring" data-tg="CALL_RING" data-multi="3"></div>
+            <div class="dots">
+              <i data-tg="CALL_DOTS" data-multi="5"></i><i data-tg="CALL_DOTS" data-multi="5"></i>
+              <i data-tg="CALL_DOTS" data-multi="5"></i><i data-tg="CALL_DOTS" data-multi="5"></i>
+              <i data-tg="CALL_DOTS" data-multi="5"></i>
+            </div>
+            <div class="bars">
+              <i data-tg="CALL_BARS" data-multi="9"></i><i data-tg="CALL_BARS" data-multi="9"></i>
+              <i data-tg="CALL_BARS" data-multi="9"></i><i data-tg="CALL_BARS" data-multi="9"></i>
+              <i data-tg="CALL_BARS" data-multi="9"></i><i data-tg="CALL_BARS" data-multi="9"></i>
+              <i data-tg="CALL_BARS" data-multi="9"></i><i data-tg="CALL_BARS" data-multi="9"></i>
+              <i data-tg="CALL_BARS" data-multi="9"></i>
+            </div>
+          </div>
+          <div class="callstatus" id="callStatus">正在听</div>
+          <div class="callhint" id="callHint">它在听你说，说完不用按键</div>
+          <button class="hangup" id="hangup">×</button>
+        </div>
+
+        <!-- 抽屉 -->
+        <div class="drawer" id="drawerLayer">
+          <div class="drawerpanel" data-tg="DRAWER_PANEL">
+            <h4>会话</h4>
+            <div class="draweritem on" data-tg="DRAWER_ITEM" data-multi="5">整理上周的照片</div>
+            <div class="draweritem" data-tg="DRAWER_ITEM" data-multi="5">明天的日程排一下</div>
+            <div class="draweritem" data-tg="DRAWER_ITEM" data-multi="5">把发票都找出来</div>
+            <div class="draweritem" data-tg="DRAWER_ITEM" data-multi="5">上周那个快递到哪了</div>
+            <div class="draweritem" data-tg="DRAWER_ITEM" data-multi="5">给妈妈说一声我晚点到</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="scrub">
+      <input id="scrub" type="range" min="0" max="1000" step="1" value="0">
+      <div class="scrubmeta">
+        <span><b id="tLabel">0</b> ms</span>
+        <span id="durLabel">/ 0 ms</span>
+      </div>
+    </div>
+  </section>
+
+  <aside>
+    <h2>这一刻 · pose</h2>
+    <table id="poseTable"></table>
+
+    <h2>车道 · lanes</h2>
+    <div id="lanes"></div>
+    <div class="legend">
+      <span><i style="background:var(--feather)"></i>羽毛</span>
+      <span><i style="background:var(--paper)"></i>纸</span>
+      <span><i style="background:var(--stone)"></i>石头</span>
+    </div>
+
+    <div class="note">
+      <b>这个页面里的每个数字，都是从 <code>:agentui</code> 的编排表里算出来的</b>，
+      不是这里手写的 —— 页面上看到的抖动，就是真机上会有的抖动。<br><br>
+      <kbd>空格</kbd> 播放/暂停 · <kbd>←</kbd><kbd>→</kbd> 逐帧 · <kbd>1</kbd>…<kbd>9</kbd> 跳场景
+    </div>
+  </aside>
+</main>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   数据：由 ChoreoDemo.kt 从 :agentui 的 Choreography + Playback 生成
+   每个 target 一条 [name, axis, atMs, durationMs, mass, settle, curve,
+                      [[t,a,x,y,s,e], …]]
+   a=alpha x=dxDp y=dyDp s=scale e=extent
+   `k` = 正常模式，`kEco` = 省电模式（关掉位移/缩放/过冲，只留淡入）。
+   两种都由 Kotlin 侧调用 Choreography.scene(beat, on, rich) 采样得到 ——
+   这个页面不自己实现降级，免得演示与真机漂移。
+   ═══════════════════════════════════════════════════════════════ */
+const DATA = /*__DATA__*/null;
+
+/* 布景：一个场景里哪些"组"该在场（这是 demo 的美术决定，不是编排） */
+/* 每个场景"在场"的元素组。
+   ★ 为什么 SEND 只有 bubble、AWAIT 才有 think、STREAM 才有 stream：
+     这四样东西在真机上是**依次出现**的，同屏摆出来会自相矛盾
+     （"文字已经流出来了，三个点还在转" = 一个已经过时的等待指示）。
+     分镜台只显示该场景此刻应该存在的东西。 */
+const STAGE = {
+  COLD_START:          ['main'],
+  SEND:                ['main','bubble'],
+  AWAIT_FIRST_TOKEN:   ['main','bubble','think'],
+  STREAM_LINE:         ['main','bubble','think','stream'],
+  CARD_ENTER:          ['main','bubble','stream','card'],
+  CARD_COMMIT:         ['main','bubble','stream','card'],
+  CARD_LAND:           ['main','bubble','stream','card'],
+  CARD_FAIL:           ['main','bubble','stream','card'],
+  TAKEOVER:            ['main','bubble','stream','takeover'],
+  CALL_LISTEN_TO_THINK:['call'],
+  CALL_THINK_TO_SPEAK: ['call'],
+  CALL_SPEAK_TO_LISTEN:['call'],
+  DRAWER_OPEN:         ['main','drawer'],
+  RESUME_ATTACH:       ['main','bubble','stream','resume'],
+};
+
+const beats   = DATA.beats;
+const byName  = Object.fromEntries(beats.map(b => [b.name, b]));
+const order   = beats.map(b => b.name);
+
+let cur      = order[0];
+let t        = 0;
+let playing  = false;
+let speed    = 1;
+let animOff  = false;
+let eco      = false;
+let lastTs   = 0;
+let callT    = 0;      // 通话页的持续动画时钟（只有播放时才走）
+
+/* 手机是 340px 宽，代表真机的 393dp 屏 ⇒ 1dp = 0.8651px。
+   ★ 位移必须乘这个系数，否则页面上的幅度会比真机大 16%：
+     "6dp 的落笔"在这里看起来像 6px，而真机上 6dp = 5.2px。 */
+const CSSDP  = 340 / 393;
+
+/* ── 工具 ───────────────────────────────────────────── */
+
+function mode(){
+  if(animOff) return 'off';
+  if(eco) return 'eco';
+  return 'normal';
+}
+
+/** 取当前场景在指定模式下的表。off = 空场景（总时长 0，全部贴到位）。 */
+function sceneFor(name, m){
+  const b = byName[name];
+  if(m === 'off'){
+    return { name:b.name, totalMs:0, targets:b.targets.map(tg => ({
+      ...tg, settle:0, k:[[0, 1, 0, 0, 1, 1]]
+    })) };
+  }
+  if(m === 'eco'){
+    return { name:b.name, totalMs:b.ecoTotalMs, targets:b.targets.map(tg => ({
+      ...tg, settle:0, k:tg.kEco
+    })) };
+  }
+  return b;
+}
+
+const here = () => sceneFor(cur, mode());
+
+function sampleTrack(tg, ms){
+  const k = tg.k;
+  if(!k.length) return {a:1,x:0,y:0,s:1,e:1};
+  if(ms <= k[0][0]) return {a:k[0][1],x:k[0][2],y:k[0][3],s:k[0][4],e:k[0][5]};
+  const last = k[k.length-1];
+  if(ms >= last[0]) return {a:last[1],x:last[2],y:last[3],s:last[4],e:last[5]};
+  // 二分定位
+  let lo = 0, hi = k.length-1;
+  while(hi - lo > 1){
+    const mid = (lo + hi) >> 1;
+    if(k[mid][0] <= ms) lo = mid; else hi = mid;
+  }
+  const p = k[lo], q = k[hi];
+  const span = q[0] - p[0] || 1;
+  const u = (ms - p[0]) / span;
+  const mix = (i) => p[i] + (q[i] - p[i]) * u;
+  return {a:mix(1), x:mix(2), y:mix(3), s:mix(4), e:mix(5)};
+}
+
+/* ── 通话页的持续动画 ─────────────────────────────────
+   这三种动效（呼吸环 / 粒子 / 波形）在真机上都是 **Restart 无限循环**，
+   不属"有始有终"的转场，所以不进场景表。它们的公式照抄 CallMotion.kt：
+     · 环：3 圈错相 1/3，周期 2400ms，半径 0.15→1，alpha=(1-u)*0.45
+     · 粒子：5 颗，周期 3600ms 绕一圈，orbit 74px，尾巴用 alpha 0.9-0.16i
+     · 波形：9 根，周期 1200ms，钟形包络 1-((i-4)/4)²*0.85
+   过渡那一下（收拢成核 / 塌进中心 / 掐断）仍然由场景表 k 驱动 ——
+   所以这里只在**到达终态之后**接管，过渡期间一个像素都不碰。
+   ─────────────────────────────────────────────────── */
+
+const CALL_TARGET = {
+  CALL_LISTEN_TO_THINK: 'dots',
+  CALL_THINK_TO_SPEAK:  'bars',
+  CALL_SPEAK_TO_LISTEN: 'ring',
+};
+
+const CALL_TEXT = {
+  ring: ['正在听',   '它在听你说，说完不用按键'],
+  dots: ['正在想',   '三个点转着，就是在想'],
+  bars: ['它在说',   '波形跟着它的声音走'],
+};
+
+function animateCall(){
+  const page = document.getElementById('callPage');
+  if(!page || !page.classList.contains('show')) return;
+  const target = CALL_TARGET[cur];
+  if(!target) return;
+
+  const scene = here();
+  const atEnd = scene.totalMs <= 0 || t >= scene.totalMs - 1;
+  if(!atEnd) return;                 // 过渡交给 k 表
+
+  const p = callT;
+  const ringEls = document.querySelectorAll('[data-tg="CALL_RING"]');
+  const dotEls  = document.querySelectorAll('[data-tg="CALL_DOTS"]');
+  const barEls  = document.querySelectorAll('[data-tg="CALL_BARS"]');
+  const ripple  = document.querySelector('.ripple');
+
+  // 收拢/掐断这些 transform 是场景表写的，进入稳态后要交还原生尺寸
+  ringEls.forEach(el => { el.style.transform = 'none'; });
+  dotEls.forEach(el  => { el.style.transform = 'none'; });
+  barEls.forEach(el  => { el.style.transform = 'none'; });
+
+  const txt = CALL_TEXT[target];
+  const st  = document.getElementById('callStatus');
+  const hint= document.getElementById('callHint');
+  if(st)   st.textContent   = txt[0];
+  if(hint) hint.textContent = txt[1];
+
+  if(target === 'ring'){
+    dotEls.forEach(el => el.style.opacity = 0);
+    barEls.forEach(el => el.style.opacity = 0);
+    if(ripple) ripple.style.opacity = 0;
+    ringEls.forEach((el, i) => {
+      const u = animOff ? 0.30 : ((p / 2400) + i / 3) % 1;
+      const r = 0.15 + 0.85 * u;
+      el.style.width = el.style.height = (200 * r).toFixed(1) + 'px';
+      el.style.opacity = ((1 - u) * 0.45).toFixed(3);
+    });
+  }
+
+  if(target === 'dots'){
+    ringEls.forEach(el => el.style.opacity = 0);
+    barEls.forEach(el => el.style.opacity = 0);
+    if(ripple) ripple.style.opacity = 0;
+    dotEls.forEach((el, i) => {
+      const u = animOff ? 0 : (p / 3600) % 1;
+      const a = (u + i / 5) * Math.PI * 2;
+      const rad = 74 * (1 - 0.06 * i);      // 拖尾：越靠后越靠里
+      el.style.transform =
+        `translate(${(Math.cos(a) * rad).toFixed(1)}px,${(Math.sin(a) * rad).toFixed(1)}px)`;
+      el.style.opacity = (0.9 - 0.16 * i).toFixed(3);
+    });
+  }
+
+  if(target === 'bars'){
+    ringEls.forEach(el => el.style.opacity = 0);
+    dotEls.forEach(el => el.style.opacity = 0);
+    if(ripple) ripple.style.opacity = 0;
+    const n = barEls.length, half = (n - 1) / 2;
+    barEls.forEach((el, i) => {
+      const env = 1 - Math.pow((i - half) / half, 2) * 0.85;   // 钟形包络
+      const w = animOff
+        ? 0.7
+        : 0.42 + 0.58 * Math.abs(Math.sin((p / 1200) * Math.PI * 2 + i * 0.62));
+      el.style.height = Math.max(4, 88 * env * w).toFixed(1) + 'px';
+      el.style.opacity = 1;
+    });
+  }
+}
+/* ── 渲染 ───────────────────────────────────────────── */
+
+function setGroup(sceneName){
+  const groups = STAGE[sceneName] || ['main'];
+  // ★ 必须写 inline display，不能用 class + `display:revert`：
+  //   revert 会回滚到"浏览器默认样式"（div = block），把作者样式里的
+  //   `display:flex` 一起掀掉 —— 表现就是主界面 flex 塌成普通流，
+  //   composer 从屏幕底部飘到中间。所以每个容器用 data-d 显式声明 display。
+  document.querySelectorAll('[data-group]').forEach(el => {
+    const on = groups.includes(el.dataset.group);
+    el.style.display = on ? (el.dataset.d || '') : 'none';
+  });
+  // 有两个容器不是用 data-group 表达"在场"的
+  document.getElementById('callPage').classList.toggle('show', groups.includes('call'));
+  document.getElementById('drawerLayer').classList.toggle('show', groups.includes('drawer'));
+}
+
+function render(){
+  const scene = here();
+  const dur = scene.totalMs;
+  const now = dur <= 0 ? 0 : Math.min(t, dur);
+
+  setGroup(cur);
+
+  for(const tg of scene.targets){
+    const els = document.querySelectorAll(`[data-tg="${tg.name}"]`);
+    if(!els.length) continue;
+    const n = Math.max(1, els.length);
+    els.forEach((el, i) => {
+      // 多实例错相：同一张表的不同时刻 —— 这就是 app 里三环错相 1/3 的做法
+      const lag = n > 1 ? (tg.durationMs / n) * i : 0;
+      const p = sampleTrack(tg, now - lag);
+      el.style.opacity = p.a;
+      el.style.transform =
+        `translate(${(p.x * CSSDP).toFixed(2)}px, ${(p.y * CSSDP).toFixed(2)}px)` +
+        ` scale(${p.s.toFixed(4)})`;
+      if(el.dataset.extent){
+        el.style.transform = `scaleX(${p.e.toFixed(4)})`;
+        el.style.transformOrigin = 'left center';
+      }
+    });
+  }
+
+  // 数字面板
+  const rows = scene.targets.map(tg => {
+    const p = sampleTrack(tg, now);
+    const dim = p.a < 0.004 ? ' class="dim"' : '';
+    return `<tr${dim}><td>${tg.name}</td><td>${p.a.toFixed(2)}</td><td>${p.x.toFixed(1)}</td>` +
+           `<td>${p.y.toFixed(1)}</td><td>${p.s.toFixed(3)}</td><td>${p.e.toFixed(2)}</td></tr>`;
+  }).join('');
+  document.getElementById('poseTable').innerHTML =
+    `<tr><th>target</th><th>α</th><th>dx</th><th>dy</th><th>s</th><th>ext</th></tr>` + rows;
+
+  // 车道
+  const lanes = scene.targets.map(tg => {
+    const left  = dur ? (tg.atMs / dur) * 100 : 0;
+    const width = dur ? Math.max(0.8, (tg.durationMs / dur) * 100) : 100;
+    const head  = dur ? (now / dur) * 100 : 0;
+    return `<div class="lane ${tg.mass.toLowerCase()}">` +
+      `<span class="nm" title="${tg.curve}">${tg.name}</span>` +
+      `<span class="track"><span class="bar2" style="left:${left}%;width:${width}%"></span>` +
+      `<span class="playhead" style="left:${head}%"></span></span></div>`;
+  }).join('');
+  document.getElementById('lanes').innerHTML = lanes;
+
+  document.getElementById('tLabel').textContent = Math.round(now);
+  document.getElementById('durLabel').textContent = `/ ${dur} ms`;
+  const scrub = document.getElementById('scrub');
+  scrub.value = dur ? Math.round((now / dur) * 1000) : 0;
+
+  animateCall();
+}
+
+/* ── 播放循环 ───────────────────────────────────────── */
+
+function tick(ts){
+  if(!playing) return;
+  if(!lastTs) lastTs = ts;
+  const dt = (ts - lastTs) * speed;
+  lastTs = ts;
+  t += dt;
+  callT += dt;
+  const scene = here();
+  if(t >= scene.totalMs){
+    t = scene.totalMs;
+    playing = false;
+    document.getElementById('playBtn').textContent = '播放';
+  }
+  render();
+  if(playing) requestAnimationFrame(tick);
+}
+
+function play(){
+  const scene = here();
+  if(scene.totalMs <= 0){ t = 0; render(); return; }
+  if(t >= scene.totalMs) t = 0;
+  playing = true; lastTs = 0;
+  document.getElementById('playBtn').textContent = '暂停';
+  requestAnimationFrame(tick);
+}
+
+function pause(){
+  playing = false;
+  document.getElementById('playBtn').textContent = '播放';
+}
+
+function select(name){
+  cur = name;
+  t = 0;
+  document.querySelectorAll('.beat').forEach(b => b.classList.toggle('on', b.dataset.name === name));
+  render();
+  play();
+}
+
+/* ── 装配 ───────────────────────────────────────────── */
+
+const nav = document.getElementById('beats');
+order.forEach((name, i) => {
+  const b = document.createElement('button');
+  b.className = 'beat'; b.dataset.name = name;
+  b.innerHTML = `<span class="num">${String(i+1).padStart(2,'0')}</span>` +
+                `<span>${name}</span><span class="ms">${byName[name].totalMs}</span>`;
+  b.onclick = () => select(name);
+  nav.appendChild(b);
+});
+
+document.getElementById('playBtn').onclick = () => { playing ? pause() : play(); };
+document.getElementById('replayBtn').onclick = () => { t = 0; play(); };
+document.getElementById('speed').oninput = (e) => {
+  speed = parseFloat(e.target.value);
+  document.getElementById('speedOut').textContent = speed.toFixed(2) + '×';
+};
+document.getElementById('animOff').onchange = (e) => { animOff = e.target.checked; pause(); t = 0; render(); };
+document.getElementById('eco').onchange = (e) => { eco = e.target.checked; pause(); t = 0; render(); };
+document.getElementById('scrub').oninput = (e) => {
+  pause();
+  const scene = here();
+  t = (parseInt(e.target.value,10) / 1000) * scene.totalMs;
+  render();
+};
+
+window.addEventListener('keydown', (e) => {
+  if(e.code === 'Space'){ e.preventDefault(); playing ? pause() : play(); return; }
+  if(e.code === 'ArrowRight'){ pause(); t = Math.min(t + 8, here().totalMs); render(); }
+  if(e.code === 'ArrowLeft'){ pause(); t = Math.max(t - 8, 0); render(); }
+  const n = parseInt(e.key, 10);
+  if(n >= 1 && n <= 9 && order[n-1]) select(order[n-1]);
+});
+
+/* 首帧：先画**静止态**（场景末尾）。
+   冷启动的第一帧本来就是全空 —— 停在 t=0 会让人以为页面坏了。
+   然后自动跑一遍，打开页面就能看见节奏，不用先找播放键。 */
+cur = order[0];
+document.querySelector(`.beat[data-name="${cur}"]`).classList.add('on');
+t = here().totalMs;
+render();
+document.getElementById('screen').classList.add('ready');
+setTimeout(() => { if(!playing) { t = 0; play(); } }, 300);
+</script>
+</body>
+</html>
