@@ -19,9 +19,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -97,6 +99,15 @@ fun PersonaScreen(
      *    用户可能在毫无准备的时候，面对一个用逝者语气说话的助手。
      */
     onRequestLegacy: (RelationKind, String?) -> Unit = { _, _ -> },
+
+    /**
+     * **清除这个角色，回到内置人格**。null = 不显示这个按钮（新建时没有可清除的东西）。
+     *
+     * ⚠️ 2026-11-21 审计发现的真缺口：`AppContainer.clearCustomPersona()`
+     *    写好了却**零调用方** —— 界面上没有任何地方能删掉自定义角色。
+     *    用户一旦保存了一个角色，就只能靠"再保存一个"覆盖它，永远回不到内置人格。
+     */
+    onClear: (() -> Unit)? = null,
 ) {
     // ★ 有 `initial` 就回填 —— 否则用户改一个字就要从头再填一遍，
     //   而"上次填的东西不见了"会让他不愿意再改第二次。
@@ -113,6 +124,8 @@ fun PersonaScreen(
         mutableStateOf(initial?.flawsRaw?.joinToString("\n").orEmpty())
     }
     var gender by remember(initial) { mutableStateOf(initial?.gender ?: PersonaGender.UNSPECIFIED) }
+    // 拆除是不可逆的：先问一次，再动手
+    var confirmingClear by remember(initial) { mutableStateOf(false) }
 
     // ── 立体度的第二组（2026-10-28）────────────────────────────
     var verbosity by remember(initial) {
@@ -596,6 +609,52 @@ fun PersonaScreen(
                 enabled = name.trim().isNotEmpty(),
             )
         }
+
+        // ── 清除（只在编辑已有角色时出现）────────────────────────
+        if (initial != null && onClear != null) {
+            item { Spacer(Modifier.height(PaSpace.l)) }
+            item {
+                PaButton(
+                    text = "清除这个角色，回到内置人格",
+                    onClick = { confirmingClear = true },
+                    style = PaButtonStyle.Text,
+                )
+            }
+            item {
+                Text(
+                    text = "角色设定、记忆使者整理过的设定都会被删掉；聊天记录不动。",
+                    style = PaType.caption,
+                    color = PaColor.TextTertiary,
+                )
+            }
+        }
+    }
+
+    if (confirmingClear) {
+        AlertDialog(
+            onDismissRequest = { confirmingClear = false },
+            title = { Text("确定清除「${name.trim().ifEmpty { "这个角色" }}」？", style = PaType.title) },
+            text = {
+                Text(
+                    text = "清掉之后会用内置人格，重新写一份要重新填。",
+                    style = PaType.body,
+                    color = PaColor.TextSecondary,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmingClear = false
+                    onClear?.invoke()
+                }) {
+                    Text("清除", color = PaColor.Danger)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmingClear = false }) {
+                    Text("保留", color = PaColor.TextSecondary)
+                }
+            },
+        )
     }
 }
 

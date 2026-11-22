@@ -85,6 +85,14 @@ fun SettingsScreen(
      */
     permissionSummary: PermissionSummary? = null,
     onOpenKeys: (() -> Unit)? = null,
+    /**
+     * **内测激活**入口（临时模块，2026-11-21）。
+     *
+     * ⚠️ `null` = 这次构建**没有**内测模块 → 这一行不画。
+     *    与 [onOpenKeys] 一样的道理：不画箭头、点下去没反应，
+     *    都比"看起来有但点了不动"好。
+     */
+    onOpenTrial: (() -> Unit)? = null,
     onOpenDsh: (() -> Unit)? = null,
     /**
      * **「允许它拒绝」开关**。
@@ -275,6 +283,19 @@ fun SettingsScreen(
             item { PaSectionTitle("模型") }
             item {
                 PaListGroup {
+                    // ── 内测激活（临时）─────────────────────────────
+                    //
+                    // ★ 放在「API Key」**上面**：内测用户压根不需要自己的 Key，
+                    //   把这一行压在下面会让他先去找 Key 输入框，然后来问"Key 在哪"。
+                    if (onOpenTrial != null) {
+                        PaListRow(
+                            icon = Icons.Default.Lock,
+                            title = "内测激活",
+                            subtitle = "输入激活码，用我们提供的额度（临时）",
+                            onClick = onOpenTrial,
+                        )
+                        PaListDivider()
+                    }
                     PaListRow(
                         icon = Icons.Default.Key,
                         title = "API Key",

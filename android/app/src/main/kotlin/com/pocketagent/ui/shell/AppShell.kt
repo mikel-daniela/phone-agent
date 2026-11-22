@@ -83,6 +83,7 @@ import com.pocketagent.ui.profile.UserProfileScreen
 import com.pocketagent.ui.settings.PrivilegeModeScreen
 import com.pocketagent.ui.settings.SettingsScreen
 import com.pocketagent.ui.settings.SettingsViewModel
+// 内测激活（临时模块，2026-11-21）—— 删模块时连这两行一起删
 import com.pocketagent.ui.sources.SourcesScreen
 import com.pocketagent.ui.sources.SourcesViewModel
 import com.pocketagent.ui.tasks.ContainerChatPort
@@ -163,6 +164,15 @@ object Routes {
      *    已删除。这一页只配**两个后台任务**用哪个模型。
      */
     const val BACKGROUND_AI = "background-ai"
+
+    /**
+     * **内测激活**（临时模块，2026-11-21）。
+     *
+     * ★ 它存在的理由只有一个：7 天后的内测里，用户不该被要求先去申请一个 Key。
+     *   输一串码就能聊 —— 这是内测唯一的目标，别的都可以后来再说。
+     *
+     * ⚠️ 拔除方式见 docs/工程/内测激活模块-2026-11-21.md。
+     */
 
     /**
      * **工作台** —— 「（角色昵称）的工作台」。
@@ -1663,6 +1673,18 @@ fun AppShell(
                                 savedHint = "「${name ?: relation.label}」这个方向我知道，" +
                                     "完整的配置页还没做好 —— 现在还没有开放。"
                             },
+                            // ★ 2026-11-21 审计：`clearCustomPersona()` 原本零调用方 ——
+                            //   用户保存过自定义角色之后，界面上没有任何方式退回内置人格。
+                            onClear = {
+                                scope.launch {
+                                    runCatching { container.clearCustomPersona() }
+                                        .onSuccess {
+                                            savedHint = "已清除，下一条对话会用内置人格"
+                                            navController.popBackStack()
+                                        }
+                                        .onFailure { savedHint = "清除失败：${it.message ?: "未知原因"}" }
+                                }
+                            },
                         )
                         savedHint?.let { msg ->
                             PaBanner(
@@ -1740,6 +1762,7 @@ fun AppShell(
                         onBack = { navController.popBackStack() },
                     )
                 }
+
 
                 // 模型配置。
                 //
