@@ -131,6 +131,55 @@ class ModelResolutionTest {
         assertEquals(ResolutionStep.EXACT, r.via)
     }
 
+    // ── ⑤b 撇开本机已不存在的凭据 ─────────────────────────────
+
+    @Test
+    fun `绑着已删 Key 的模型不会被选中`() {
+        // ★ 2026-11-22 真机回归：记忆抽取走的也是这个函数，它当时不看凭据，
+        //   于是分身里选中了绑着已删 Key 的 glm-5.3-flash ⇒ useKey 返回 null
+        //   ⇒ 记忆库永远 0 条，而日志只说"拿到空返回"。
+        val orphan = ModelConfig(
+            id = "row-orphan", label = "", credentialId = "gone",
+            modelId = "glm-5.3-flash", modelDisplayName = "glm-5.3-flash",
+            tier = ModelTier.STANDARD, roles = setOf(ModelRole.CHAT), enabled = true,
+        )
+        val live = ModelConfig(
+            id = "row-live", label = "", credentialId = "alive",
+            modelId = "deepseek-v4-pro", modelDisplayName = "deepseek-v4-pro",
+            tier = ModelTier.STANDARD, roles = setOf(ModelRole.CHAT), enabled = true,
+        )
+        val r = listOf(orphan, live).resolveForPurpose(
+            ModelRole.CHAT,
+            knownCredentialIds = setOf("alive"),
+        ) as ModelResolution.Found
+        assertEquals("跳过了绑着已删 Key 的那条", live.id, r.config.id)
+    }
+
+    @Test
+    fun `全都是孤儿配置时说的是去重加 Key 而不是去配模型`() {
+        // ⚠️ 两者用户要做的动作完全不同。合并成一个 None 的话，
+        //   界面只能说"没有可用模型"，而用户看着列表里明明有 22 个模型。
+        val models = listOf(
+            ModelConfig(
+                id = "row-1", label = "", credentialId = "gone-1",
+                modelId = "a", modelDisplayName = "a",
+                tier = ModelTier.STANDARD, roles = setOf(ModelRole.CHAT), enabled = true,
+            ),
+        )
+        val r = models.resolveForPurpose(ModelRole.CHAT, knownCredentialIds = setOf("other"))
+        assertTrue(r is ModelResolution.AllOrphans)
+        assertEquals("必须把数量带出来，界面才好说话", 1, (r as ModelResolution.AllOrphans).count)
+    }
+
+    @Test
+    fun `不传凭据集合时行为与以前完全一致`() {
+        // ⚠️ 这条守的是向后兼容：老调用方不传 knownCredentialIds，
+        //   不能因为新参数就把它们的模型全判成孤儿。
+        val m = model("glm-5.3-flash", roles = setOf(ModelRole.CHAT))
+        val r = listOf(m).resolveForPurpose(ModelRole.CHAT) as ModelResolution.Found
+        assertEquals(m.id, r.config.id)
+    }
+
     // ── ⑥ 返回的是 ModelConfig，调用方要自己取 modelId ──────────
 
     @Test

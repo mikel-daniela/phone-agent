@@ -35,9 +35,25 @@ package com.pocketagent.modelrouter
  * ⚠️ 本文件是**纯函数、零 IO、零 Android 依赖** ⇒ 进得了离线验证器。
  *    时间与数据库都不参与，所以它可以在没有设备的机器上被完整测到。
  */
-fun List<ModelConfig>.resolveForPurpose(purpose: ModelRole): ModelResolution {
+fun List<ModelConfig>.resolveForPurpose(
+    purpose: ModelRole,
+    knownCredentialIds: Set<String>? = null,
+): ModelResolution {
+    // ── 步骤 0：把绑着"本机已不存在的 Key"的模型剔掉 ──────────
+    //
+    // ⚠️ 2026-11-22 真机（应用分身）：记忆抽取走的就是这个函数，
+    //    它不看 `credentialId` 还在不在本机 ⇒ 选中了绑着已删 Key 的
+    //    `glm-5.3-flash`，`useKey` 返回 null，于是**记忆库永远 0 条**，
+    //    日志只说"记忆抽取拿到空返回"。
+    //    聊天那条路早在 2026-11-17 就修过同一个洞（见 `pickModel` 步骤 0），
+    //    这里漏了 —— 同一个 bug 形态的第二处。
+    val live = if (knownCredentialIds == null) this else filter { it.credentialId in knownCredentialIds }
+    if (isNotEmpty() && live.isEmpty()) {
+        return ModelResolution.AllOrphans(size)
+    }
+
     // ① 用户显式指定
-    firstOrNull { it.enabled && purpose in it.roles }?.let {
+    live.firstOrNull { it.enabled && purpose in it.roles }?.let {
         return ModelResolution.Found(it, ResolutionStep.EXACT)
     }
 
@@ -47,14 +63,14 @@ fun List<ModelConfig>.resolveForPurpose(purpose: ModelRole): ModelResolution {
     //
     //    ⚠️ 只在 purpose 不是 WORKER 自己时回落（否则第 ① 步就已经命中了）。
     if (purpose != ModelRole.WORKER) {
-        firstOrNull { it.canWork }?.let {
+        live.firstOrNull { it.canWork }?.let {
             return ModelResolution.Found(it, ResolutionStep.FALLBACK_WORKER)
         }
     }
 
     // ③ 兜底：任意启用项。⚠️ 这一级最危险（用户可能压根没打算让它对话），
     //    所以它必须被标出来，让界面能说"暂时用了它"。
-    firstOrNull { it.enabled }?.let {
+    live.firstOrNull { it.enabled }?.let {
         return ModelResolution.Found(it, ResolutionStep.FALLBACK_ANY)
     }
 
@@ -75,6 +91,16 @@ sealed interface ModelResolution {
 
     /** 没有可用的模型。调用方应引导用户去配置，而不是抛异常。 */
     data object None : ModelResolution
+
+    /**
+     * 配了模型，但它们绑的 Key 在本机**全都不存在了**。
+     *
+     * ⚠️ 与 [None] 分开：用户要做的动作完全不同 ——
+     *   `None` 是"去配一个模型"，这里是"去重新加一条 Key"。
+     *   合并成 None 的话，界面只能说"没有可用模型"，
+     *   而用户看着列表里明明有 22 个模型。
+     */
+    data class AllOrphans(val count: Int) : ModelResolution
 }
 
 /**

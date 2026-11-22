@@ -2111,6 +2111,14 @@ class AppContainer(context: Context) {
             ran = due,
             turnIndex = turn,
         )
+        // ★ 2026-11-22 真机排查：三条对话里 `场记`/`后台任务` 日志全为 0，
+        //    但代码路径看起来很通。入口这一行是唯一能分辨
+        //    「没被调度」与「调度了但模型没吐/解析失败」的证据。
+        Timber.i(
+            "后台调度：轮次 %d，本轮该跑 %s",
+            turn,
+            if (due.isEmpty()) "无" else due.joinToString("／") { it.label },
+        )
         if (due.isEmpty()) return
 
         startupScope.launch(Dispatchers.IO) {
@@ -2165,6 +2173,9 @@ class AppContainer(context: Context) {
         )
 
         val raw = backgroundLlmComplete(prompt, purpose, modelId, effort)
+        // ★ 同一处排查：成功路径原来一个字都不打，于是"模型回了空串"
+        //    与"模型根本没被调"在日志里长得一模一样。
+        Timber.i("后台任务 %s：模型回了 %d 字", task.label, raw.length)
 
         // ── 生理导演：另一条解析与生效路径 ──────────────────
         if (task == com.pocketagent.personalogic.BackgroundTask.PHYSIO) {
@@ -2204,6 +2215,16 @@ class AppContainer(context: Context) {
         }
         if (parsed.dropped > 0) {
             Timber.w("后台任务 %s 丢弃了 %d 条（枚举不认识或缺字段）", task.label, parsed.dropped)
+        }
+        // ★ 2026-11-22 真机排查：场记真的跑了、模型真的回了 69 字，
+        //    但事件/帮助/小事全是空 —— 有效的信息一个字都看不见。
+        //    ⇒ 空结果时把原文开头记下来（不刷屏：只在真的全空时打）。
+        if (
+            parsed.output.events.isEmpty() &&
+            parsed.output.smallMoments.isEmpty() &&
+            parsed.output.performance.isNullOrBlank()
+        ) {
+            Timber.w("后台任务 %s 回了空结果，原文：%s", task.label, raw.take(240).replace('\n', ' '))
         }
 
         // ── 表演指导：一句话，过闸才生效 ──────────────────────
@@ -3234,12 +3255,17 @@ class AppContainer(context: Context) {
                 return listOf("跑不起来：还没有可用的 API Key。先去「设置 → API Key」填一条。")
             }
         }
-        val resolution = modelRepository()?.all().orEmpty().resolveForPurpose(ModelRole.CHAT)
+        val resolution = modelRepository()?.all().orEmpty()
+            .resolveForPurpose(ModelRole.CHAT, knownCredentialIds = runCatching { repo.knownCredentialIds() }.getOrNull())
         val config = when (resolution) {
             is ModelResolution.Found -> resolution.config
             is ModelResolution.None -> {
                 Timber.w("破甲自测：没有配置对话模型")
                 return listOf("跑不起来：还没有指定对话模型。先去「设置 → 模型配置」选一个。")
+            }
+            is ModelResolution.AllOrphans -> {
+                Timber.w("破甲自测：%d 个模型绑的 Key 在本机都不存在了", resolution.count)
+                return listOf("跑不起来：你配的 ${resolution.count} 个模型都绑着本机已不存在的 Key。先去「设置 → API Key」重新加一条。")
             }
         }
         Timber.i(
@@ -3509,12 +3535,30 @@ class AppContainer(context: Context) {
                 // ⚠️ 配了模型但不在这台机器的模型库里（删了、或换了 Key），
                 //    退回对话模型 —— 而不是静默不跑。
                 val all = modelRepository()?.all().orEmpty()
-                val configured = memoryModelId?.let { id -> all.firstOrNull { it.modelId == id } }
+                // ★ 2026-11-22：**把本机真实存在的凭据 id 交给挑选逻辑**。
+                //   此前这里不看凭据，"设置页配的记忆模型"绑着已删 Key 时
+                //   `useKey` 返回 null ⇒ 记忆永远 0 条，日志只说"拿到空返回"。
+                val knownIds = runCatching { repo.knownCredentialIds() }.getOrNull()
+                val configured = memoryModelId?.let { id ->
+                    all.firstOrNull { cfg ->
+                        cfg.modelId == id && (knownIds == null || cfg.credentialId in knownIds)
+                    }
+                }
+                if (configured == null && !memoryModelId.isNullOrBlank()) {
+                    Timber.w(
+                        "记忆抽取：配的模型 %s 不可用（不在库里，或它绑的 Key 本机没了），改用对话模型",
+                        memoryModelId,
+                    )
+                }
                 val config = configured ?: when (
-                    val r = all.resolveForPurpose(ModelRole.CHAT)
+                    val r = all.resolveForPurpose(ModelRole.CHAT, knownCredentialIds = knownIds)
                 ) {
                     is ModelResolution.Found -> r.config
                     is ModelResolution.None -> return@runBlocking ""
+                    is ModelResolution.AllOrphans -> {
+                        Timber.w("记忆抽取跳过：%d 个模型绑的 Key 在本机都不存在了", r.count)
+                        return@runBlocking ""
+                    }
                 }
                 repo.useKey(config.credentialId) { provider, credential ->
                     val request = ChatRequest(
@@ -4520,10 +4564,14 @@ class AppContainer(context: Context) {
         }
         val config = when (
             val r = modelRepository()?.all().orEmpty()
-                .resolveForPurpose(ModelRole.CHAT)
+                .resolveForPurpose(ModelRole.CHAT, knownCredentialIds = runCatching { repo.knownCredentialIds() }.getOrNull())
         ) {
             is ModelResolution.Found -> r.config
             is ModelResolution.None -> return null
+            is ModelResolution.AllOrphans -> {
+                Timber.w("后台请求跳过：%d 个模型绑的 Key 在本机都不存在了", r.count)
+                return null
+            }
         }
         repo.useKey(config.credentialId) { provider, credential ->
             val request = ChatRequest(
@@ -5470,10 +5518,15 @@ class AppContainer(context: Context) {
                 else -> return null
             }
             val config = when (
-                val r = modelRepository()?.all().orEmpty().resolveForPurpose(ModelRole.CHAT)
+                val r = modelRepository()?.all().orEmpty()
+                    .resolveForPurpose(ModelRole.CHAT, knownCredentialIds = runCatching { repo.knownCredentialIds() }.getOrNull())
             ) {
                 is ModelResolution.Found -> r.config
                 is ModelResolution.None -> return null
+                is ModelResolution.AllOrphans -> {
+                    Timber.w("记忆随笔跳过：%d 个模型绑的 Key 在本机都不存在了", r.count)
+                    return null
+                }
             }
             repo.useKey(config.credentialId) { provider, credential ->
                 val request = ChatRequest(
