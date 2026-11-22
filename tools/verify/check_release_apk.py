@@ -50,9 +50,27 @@ import sys
 
 
 # 发行包体积上限（MB）。
-# 当前实测 32.7 MB。留约 40% 余量，既能容忍正常增长，
-# 又能挡住"x86 原生库又回来了"这种量级的回归。
-MAX_RELEASE_MB = 45.0
+#
+# ── 2026-11-22 重新定基：32.7 → 59.8 MB ──────────────────
+# 上一版阈值 45 MB 是 2026-11-01 按「只有 ML Kit OCR + SQLCipher」
+# 的 32.7 MB 定的。之后 `b02fb4d` 把 **Chaquopy（进程内 CPython）**
+# 引进来了 —— 那是内置 Linux 引擎的 Python 后端，`targetSdk = 36`
+# 下不允许 exec 私有目录里的可执行文件，所以只能这么做。
+#
+# 它带来的真实开销（按 release 包里实测）：
+#   lib/arm64-v8a  25.4 MB   （mlkit 10.5 + sqlcipher 4.9 + python 4.3 + …）
+#   lib/armeabi-v7a 16.1 MB  （同上，另一份）
+#   assets          10.8 MB  （Python 标准库 .imy + 运行时资源）
+#   classes.dex      6.9 MB
+#
+# ⇒ 这是**有意的功能成本**，不是"abiFilters 被撤掉"。所以阈值上调到
+#   65 MB：仍然挡得住两件事 —— ① x86/x86_64 原生库回来（那会再加
+#   ~30 MB，直接撞线）② 又引进一个 10 MB 级的原生依赖（同样撞线）。
+#
+# ⚠️ 如果要真正瘦下来，正确做法是**按 ABI 拆包**（`splits.abi`）
+#    或砍掉 armeabi-v7a（minSdk=31，32 位真机已极少），那是发布决策，
+#    不该由这个闸门替产品做决定。
+MAX_RELEASE_MB = 65.0
 
 
 def _zip_names(apk: str) -> list[str]:
@@ -172,7 +190,7 @@ def main() -> int:
     if size_mb > MAX_RELEASE_MB:
         failures.append(
             f"体积 {size_mb:.1f} MB 超过上限 {MAX_RELEASE_MB} MB"
-            "（检查 release 的 abiFilters 是否被撤掉）"
+            "（检查 release 的 abiFilters 是否被撤掉，或是否又多了重量级原生依赖）"
         )
         print(f"✗ {failures[-1]}")
     else:
