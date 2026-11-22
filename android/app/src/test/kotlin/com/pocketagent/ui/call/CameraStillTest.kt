@@ -2,6 +2,7 @@ package com.pocketagent.ui.call
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -55,5 +56,80 @@ class CameraStillTest {
             0, 0, 0,
         )
         assertEquals(7, CameraStill.trimJpeg(data).size)
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  预览方向与比例
+    // ══════════════════════════════════════════════════════════════
+    //
+    // ★ 这几条防的是什么
+    //
+    // 真机上第一次进视频通话，画面是**横躺着**的（老 Camera API 不知道手机
+    // 是竖的，不调 setDisplayOrientation 就歪 90°）；补了旋转之后窗口又是横
+    // 的，人脸被横向压扁 —— 因为旋转只改画面内容、不改 Surface 比例。
+    //
+    // 这两个公式以前直接读 CameraInfo，只能在手机上看；现在抽成纯函数，
+    // 下面把常见机型的两组传感器角度都钉住。
+
+    @Test
+    fun `竖屏前置摄像头转 90 度`() {
+        // 常见前置：sensor=270。竖屏（0）→ 镜像后是 90。
+        assertEquals(90, CameraStill.displayOrientation(270, frontFacing = true, screenDegrees = 0))
+    }
+
+    @Test
+    fun `竖屏后置摄像头转 90 度`() {
+        assertEquals(90, CameraStill.displayOrientation(90, frontFacing = false, screenDegrees = 0))
+    }
+
+    @Test
+    fun `横屏时后置不需要旋转`() {
+        assertEquals(0, CameraStill.displayOrientation(90, frontFacing = false, screenDegrees = 90))
+    }
+
+    @Test
+    fun `倒过来拿的后置是 180 度`() {
+        assertEquals(180, CameraStill.displayOrientation(90, frontFacing = false, screenDegrees = 270))
+    }
+
+    @Test
+    fun `角度永远落在 0 到 359 之间`() {
+        val angles = listOf(0, 90, 180, 270)
+        for (sensor in angles) {
+            for (screen in angles) {
+                for (front in listOf(true, false)) {
+                    val got = CameraStill.displayOrientation(sensor, front, screen)
+                    assertTrue("传感器 $sensor 屏幕 $screen 前置 $front 算出 $got", got in 0..359)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `转过 90 度之后比例要倒过来`() {
+        // 640x480 横向预览，转 90° 后占位应该是 3:4（竖的）。
+        val aspect = CameraStill.aspectOf(640, 480, displayOrientation = 90)
+        assertEquals(0.75f, aspect!!, 0.0001f)
+    }
+
+    @Test
+    fun `没转的时候比例是正的`() {
+        val aspect = CameraStill.aspectOf(640, 480, displayOrientation = 0)
+        assertEquals(4f / 3f, aspect!!, 0.0001f)
+    }
+
+    @Test
+    fun `转 180 度比例不变`() {
+        assertEquals(
+            CameraStill.aspectOf(640, 480, displayOrientation = 0)!!,
+            CameraStill.aspectOf(640, 480, displayOrientation = 180)!!,
+            0.0001f,
+        )
+    }
+
+    @Test
+    fun `尺寸非法时不给比例`() {
+        assertEquals(null, CameraStill.aspectOf(0, 480, displayOrientation = 90))
+        assertEquals(null, CameraStill.aspectOf(640, -1, displayOrientation = 90))
     }
 }

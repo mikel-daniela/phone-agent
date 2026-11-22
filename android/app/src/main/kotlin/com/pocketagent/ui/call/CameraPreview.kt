@@ -29,9 +29,26 @@ import timber.log.Timber
 fun CameraPreview(
     still: CameraStill,
     modifier: Modifier = Modifier,
-    onOpened: (Pair<Int, Int>?) -> Unit = {},
+    /**
+     * 回调是**画到屏幕上的宽高比**（宽 / 高），已经算进 `setDisplayOrientation`
+     * 的旋转 —— 调用方直接拿它去 `Modifier.aspectRatio` 就不会变形。
+     * 直接拿 `previewSize()` 的 w/h 会得到横的，内容转竖后就被压扁。
+     */
+    onOpened: (Float?) -> Unit = {},
 ) {
     val context = LocalContext.current
+    // ⚠️ 屏幕当前转了多少度 —— 老 Camera API 不知道手机是竖的，
+    //    不告诉它，预览就会躺倒 90°。
+    val screenDegrees = run {
+        val rotation = androidx.compose.ui.platform.LocalView.current.display?.rotation
+            ?: android.view.Surface.ROTATION_0
+        when (rotation) {
+            android.view.Surface.ROTATION_90 -> 90
+            android.view.Surface.ROTATION_180 -> 180
+            android.view.Surface.ROTATION_270 -> 270
+            else -> 0
+        }
+    }
     DisposableEffect(still) {
         onDispose {
             still.close()
@@ -45,8 +62,8 @@ fun CameraPreview(
             SurfaceView(context).apply {
                 holder.addCallback(object : SurfaceHolder.Callback {
                     override fun surfaceCreated(holder: SurfaceHolder) {
-                        still.attach(holder)
-                        onOpened(still.previewSize())
+                        still.attach(holder, screenDegrees)
+                        onOpened(still.displayedAspect(screenDegrees))
                     }
 
                     override fun surfaceChanged(

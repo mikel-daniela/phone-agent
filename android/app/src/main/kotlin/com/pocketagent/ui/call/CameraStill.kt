@@ -40,6 +40,9 @@ class CameraStill(private val context: Context) {
 
     private var camera: Camera? = null
 
+    /** 打开的是哪一颗（0/1/…）；`setDisplayOrientation` 要按它取 `orientation`。 */
+    private var cameraIndex: Int = -1
+
     /** 当前是否已经开着（界面用来决定要不要画"正在看"）。 */
     val isOpen: Boolean get() = camera != null
 
@@ -50,15 +53,41 @@ class CameraStill(private val context: Context) {
      *   的实际尺寸匹配，差太多会拉伸或直接黑屏。调用方拿到
      *   [previewSize] 之后自己调整 View 的比例。
      */
-    fun attach(holder: SurfaceHolder) {
+    fun attach(holder: SurfaceHolder, displayRotationDegrees: Int = 0) {
         val cam = ensureOpen() ?: return
         runCatching {
+            // ⚠️ 不设方向的话，竖屏手机上预览是**横躺着**的 —— 用户看到的
+            //    是歪 90° 的画面，而不是"摄像头坏了"。这是老 Camera API 的
+            //    固有坑：它不知道当前屏幕是竖的。
+            cam.setDisplayOrientation(displayOrientationFor(displayRotationDegrees))
             cam.setPreviewDisplay(holder)
             cam.startPreview()
         }.onFailure {
             Timber.w(it, "摄像头预览挂载失败")
             close()
         }
+    }
+
+    /**
+     * 传给 `Camera.setDisplayOrientation` 的角度。
+     *
+     * 公式来自官方文档（前置与后置的符号是反的）：
+     * · 后置：`(orientation - screen + 360) % 360`
+     * · 前置：先 `(orientation + screen) % 360`，再镜像 `(360 - x) % 360`
+     *
+     * ⚠️ 不取 `getWindowManager().defaultDisplay`：那是废弃 API，且在
+     *    Compose 里拿不到当前 Activity 的 Window。屏幕角度由调用方传进来
+     *    （`LocalView.current.display.rotation` 换算成 0/90/180/270）。
+     */
+    fun displayOrientationFor(screenDegrees: Int): Int {
+        val index = if (cameraIndex >= 0) cameraIndex else return 0
+        val info = Camera.CameraInfo()
+        runCatching { Camera.getCameraInfo(index, info) }.onFailure { return 0 }
+        return displayOrientation(
+            sensorOrientation = info.orientation,
+            frontFacing = info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT,
+            screenDegrees = screenDegrees,
+        )
     }
 
     /**
@@ -86,6 +115,25 @@ class CameraStill(private val context: Context) {
         val cam = camera ?: return null
         val size = runCatching { cam.parameters.previewSize }.getOrNull() ?: return null
         return size.width to size.height
+    }
+
+    /**
+     * **画到屏幕上之后**的宽高比（宽 / 高）。
+     *
+     * ⚠️ 这个值不能直接用 [previewSize] 算：`setDisplayOrientation(90)` 只旋转
+     *    **画面内容**，不改变 Surface 的比例。手机摄像头的原生预览是横向的
+     *    （常见 640×480 / 1280×720），转了 90° 之后内容变成竖的，窗口就该是
+     *    竖的 —— 若仍按 `w/h` 取框，人脸会被横向压扁（真机第一版就是这样）。
+     *
+     * @param screenDegrees 屏幕当前方向（0/90/180/270）
+     */
+    fun displayedAspect(screenDegrees: Int): Float? {
+        val (w, h) = previewSize() ?: return null
+        return aspectOf(
+            previewWidth = w,
+            previewHeight = h,
+            displayOrientation = displayOrientationFor(screenDegrees),
+        )
     }
 
     /**
@@ -132,6 +180,7 @@ class CameraStill(private val context: Context) {
     fun close() {
         val cam = camera ?: return
         camera = null
+        cameraIndex = -1
         runCatching { cam.stopPreview() }.onFailure { Timber.d(it, "停预览失败") }
         runCatching { cam.release() }.onFailure { Timber.w(it, "释放摄像头失败") }
     }
@@ -141,6 +190,7 @@ class CameraStill(private val context: Context) {
         val opened = runCatching {
             // ⚠️ 先找前置；找不到就退回后置 —— 有摄像头总比"看不见"好。
             val index = frontCameraIndex() ?: 0
+            cameraIndex = index
             Camera.open(index)
         }.onFailure { Timber.w(it, "打开摄像头失败") }.getOrNull() ?: return null
         camera = opened
@@ -161,6 +211,51 @@ class CameraStill(private val context: Context) {
     }
 
     companion object {
+
+        /**
+         * 传给 `Camera.setDisplayOrientation` 的角度 —— **纯计算，可离线测试**。
+         *
+         * 真机两次踩坑逼出这个签名：第一版把 `Camera.getCameraInfo` 直接写在
+         * 里面，于是"角度算错"这件事只能在手机上肉眼看，单元测试一点办法没有。
+         * 现在硬件只负责把 `orientation` 与"是不是前置"读出来。
+         *
+         * @param sensorOrientation `CameraInfo.orientation`（通常 90 或 270）
+         * @param frontFacing 前置摄像头要把角度镜像回去，公式的正负号与后置相反
+         * @param screenDegrees 屏幕当前方向
+         */
+        fun displayOrientation(
+            sensorOrientation: Int,
+            frontFacing: Boolean,
+            screenDegrees: Int,
+        ): Int {
+            val screen = ((screenDegrees % 360) + 360) % 360
+            val sensor = ((sensorOrientation % 360) + 360) % 360
+            return if (frontFacing) {
+                (360 - (sensor + screen) % 360) % 360
+            } else {
+                (sensor - screen + 360) % 360
+            }
+        }
+
+        /**
+         * 画到屏幕上之后的宽高比（宽 / 高）—— **纯计算，可离线测试**。
+         *
+         * [displayOrientation] 转了 90/270 时，画面内容与 Surface 的长短轴互换，
+         * 比例必须跟着倒过来；否则窗口是横的、内容是竖的，人脸被横向压扁。
+         */
+        fun aspectOf(
+            previewWidth: Int,
+            previewHeight: Int,
+            displayOrientation: Int,
+        ): Float? {
+            if (previewWidth <= 0 || previewHeight <= 0) return null
+            val rotated = ((displayOrientation % 360) + 360) % 360 % 180 != 0
+            return if (rotated) {
+                previewHeight.toFloat() / previewWidth.toFloat()
+            } else {
+                previewWidth.toFloat() / previewHeight.toFloat()
+            }
+        }
         /**
          * 从 `takePicture` 的缓冲区里切出真正的 JPEG。
          *

@@ -6,7 +6,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.ui.draw.clip
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -117,6 +119,9 @@ fun CallRouteHost(
         mutableStateOf(!video || container.hasCameraPermission())
     }
     var cameraTrouble by remember { mutableStateOf("") }
+    // ⚠️ 小窗的比例必须跟着**摄像头真实的预览比例**走，否则画面被拉伸变形
+    //    （真机第一版就是 96×128 硬写死，4:3 的帧被拉成 3:4，人看着是扁的）。
+    var previewAspect by remember { mutableStateOf(3f / 4f) }
     val cameraLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -294,11 +299,18 @@ fun CallRouteHost(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(top = 56.dp, start = PaSpace.m)
-                    .size(96.dp, 128.dp)
+                    .width(96.dp)
+                    .aspectRatio(previewAspect)
                     .clip(androidx.compose.foundation.shape.RoundedCornerShape(14.dp)),
             ) {
                 if (camera != null) {
-                    CameraPreview(still = camera, modifier = Modifier.fillMaxSize())
+                    CameraPreview(
+                        still = camera,
+                        modifier = Modifier.fillMaxSize(),
+                        onOpened = { aspect ->
+                            if (aspect != null && aspect > 0f) previewAspect = aspect
+                        },
+                    )
                 }
             }
         }
