@@ -2757,3 +2757,73 @@ BreezeBlue 官方文档**没公布 key 的总长度**（示例是 `brz_xxxxxxxxx
    （AppKey + AccessKey + Secret），不是"一个 Key"，得先扩凭据模型。
 4. **没装机验证**。注意本轮改了 DB 版本：装机后第一次启动会走 `MIGRATION_4_5`。
    要是崩在迁移上，把 `adb logcat | grep -i "Migration didn"` 的结果贴给我。
+
+---
+
+## [2026-11-21 21:10] 内测激活模块（临时）交付：78 个不填 Key 的用户怎么用上
+
+- **状态**：待办（等真机验证）
+- **来自**：claude
+- **需要对方做什么**：①先看「三、最要紧的两条」——**我判断不了那两个模型 id 到底存不存在**，需要你或用户确认；②按「四」装机跑一遍激活；③如果内测包要今天出，还要有人执行「二」的签发四步（我造不出真 Key）。
+
+### 一、做了什么
+
+7 天后内测，用户第一步是"填自己的 API Key"——这一步劝退率极高。所以加了个临时模块：
+**内置我们的 Key，用户只输一串激活码**，模型只有两个（`glm-5.3-flash` / `deepseek-v4.1-flash`，走 `opencode-go`），一码本机一次。
+
+新模块 `android/trialaccess/`（纯 Kotlin，8 个文件）+ 3 处接线（模块声明 / 容器 / 设置页入口）+ 签发工具 `tools/trial/issue_codes.py`。
+完整说明在 **`docs/工程/内测激活模块-2026-11-21.md`**（含拔除步骤）。
+
+### 二、出内测包的人要执行的四步（我不能代做）
+
+```bash
+python tools/trial/issue_codes.py gen-secret        # ① 只做一次，生成签名密钥
+python tools/trial/issue_codes.py embed-secret      # ② 注入签名密钥
+python tools/trial/issue_codes.py embed-key --key sk-xxxx   # ③ 注入内置 Key（只在出包的机器上做）
+python tools/trial/issue_codes.py issue --count 50 --batch 1 --days 30   # ④ 出 50 个码
+```
+
+`.trial-secret`、`codes-*.csv` 已在 `tools/trial/.gitignore` 挡住，别把它们提交上去。
+**漏了 ② 或 ③** 的表现是明确的报错（"这个内测包没有内置验签密钥 / 没有内置 Key"），不会变成"你的码不对"。
+
+### 三、★ 最要紧的两条（我判断不了，必须有人确认）
+
+1. **`glm-5.3-flash` 与 `deepseek-v4.1-flash` 这两个 id，`opencode-go` 真的提供吗？**
+   仓库里 `ProviderProfiles.OpenCodeGo.defaultModels` 只有 `glm-5.2` / `deepseek-v4-flash` / `kimi-k2.7-code` 等，
+   **没有这两个**。它们是需求里口头给的写法，我按项目惯例（厂商 id 带连字符）归一成了上面两个。
+   若调用时 404：**只需改 `TrialCatalog.MODELS` 两行**，判定逻辑不用动。
+   ⇒ 请你先用一个能用的 Key 手工 curl 一次确认，或者告诉我正确的 id 我再改。
+
+2. **`x-opencode-session` 请求头**：`ProviderProfiles.OpenCodeGo` 声明了它（缺失会 400
+   `Request is missing x-opencode-session and cannot be routed efficiently`）。
+   我没有确认现有 Provider 实现是否会自动带这个头 —— **如果不会，激活全对但一发消息就 400**。
+
+### 四、要你真机看的（我碰不到手机）
+
+1. 装内测包 → 设置 → 模型 → 「内测激活」→ 输码 → 激活成功 → 去聊天发一句话 → **收到回复**
+2. 分别用 `GLM-5.3 Flash` 和 `DeepSeek V4.1 Flash` 各发一次（见上条 1、2）
+3. 同一个码再激活一次 → 应提示"在这台手机上已经用过了"（**卸载重装后能再次激活，这是预期**，见文档 §4）
+4. 点「撤销本机激活」→ 聊天页应提示没有可用模型，**不能崩**
+5. 把 `files/trial/activation.json` 手工写成乱码 → 重启应用应正常启动、页面显示未激活
+6. 激活后去 API Key 页，确认多出且只有一条标签为 **「内测（临时）」** 的凭据，模型只有那两个
+
+### 五、我这边已验证 / 未验证（按 CLAUDE.md 分开写）
+
+**已验证（Claude 离线）**
+
+- `python tools/verify/run_logic_tests.py` → `pyexit=0`，`Tests run: 5197, Failures: 0`（含 trialaccess 4 个测试类 44 条）
+- `python tools/trial/issue_codes.py selftest` → 31 项全过
+- `python tools/trial/mutation_check.py --run` → 变异验证 **6/6 条被抓到**（6 种"改坏了不抛异常、真机上看不出来"的改法，测试全部变红；跑完源码逐字节还原并比对）
+- `python tools/verify/check_no_secrets.py` → OK（1084 文件，未发现疑似密钥）
+- 与签发工具的**字节级对表**：固定向量 `PA-043G002N-Y00G40R4-0M3C6G8T-3H431HQB` 在 Kotlin 与 Python 两边一致
+
+**未验证（需真机）**：就是上面「四」的 6 条，全部。
+
+### 六、我明确没做的
+
+1. **没有内置任何真 Key**（`TrialKeyShards.PARTS` 是空占位）。仓库里永远不该有真 Key ——
+   `TrialKeyVaultTest.默认构建没有内置 Key` 这条测试**故意会红**，用来提醒谁把它提交上来了。
+2. **没做服务端**。所以"一次性"= **本机一次性**：换机、转发、卸载重装都拦不住。
+   这是无自有服务端的必然结果，不是省事（文档 §4 有对照表，对外别说错）。
+3. **没动现有的 API Key 流程**。内测入口是**新增一行**，用户自己买的 Key 照旧能用；
+   `onOpenTrial` 传 null 时那一行不画 —— 拔掉模块不会留下空壳。

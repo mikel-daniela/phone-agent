@@ -98,6 +98,10 @@ KNOWN_FAKE = {
     # ProviderCredentialTest：验证"toString 不得泄漏密钥"时用的夹具。
     # 后半段是连续字母表 —— 明显不是真密钥。
     "sk-secret-abcdefghijklmnop",
+    # CredentialMappingTest：验证"sk-ant- 要认成 Anthropic，不能被泛 sk- 家族抢先"的夹具。
+    # 判据是**大小写交替的字母表**（AbCdEfGh...）+ 递增数字 0-9 —— 人手写不出这种串，
+    # 也不可能是任何真 Key。这一条由 keylogic 接线那条线引入（同一文件里那段测试）。
+    "sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGh",
 }
 
 # ═══════════════════════════════════════════════════════════════
