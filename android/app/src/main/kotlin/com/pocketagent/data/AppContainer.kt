@@ -1983,7 +1983,29 @@ class AppContainer(context: Context) {
     /** 当前生效的表演指导；没有（或已过期）返回 null。 */
     fun currentPerformance(): com.pocketagent.personalogic.Performance? = performanceSlot.current()
 
+    /**
+     * **环境小事**（导演写的 `smallMoments`）。
+     *
+     * ★ 2026-11-21：在此之前 `DirectorOutput.smallMoments` 从导演出来后
+     *   **零消费方** —— 导演写了"窗外在下雨"，前台模型一个字都看不到。
+     *   用户提的"随机性的大小事件"里，小事件这半边一直没落地。
+     */
+    private val momentSlot = com.pocketagent.personalogic.MomentSlot()
+
+    /** 当前有效的环境小事（0..2 条，过期为空）。 */
+    fun currentMoments(): List<String> = momentSlot.currentLines()
+
     fun pendingFacts(): List<com.pocketagent.personalogic.ProposedFact> = pendingFactsValue
+
+    /**
+     * 后台 AI 眼里"**已经知道**"的事实 id。
+     *
+     * 世界书里的条目（不论 SETTING 还是 FACT）+ 还在等你确认的候选，
+     * 都算已知 —— 否则场记每轮都会把同一件事再提一遍，你会看到
+     * 同一个"新事实"反复出现在待确认列表里。
+     */
+    private fun knownFactIds(): Set<String> =
+        (worldEntriesValue.map { it.id } + pendingFactsValue.map { it.id }).toSet()
 
     /**
      * **确认一条事实** → 进世界书。
@@ -2137,7 +2159,7 @@ class AppContainer(context: Context) {
         val prompt = com.pocketagent.personalogic.DirectorPrompt.build(
             recentTurns = listOf(userText to assistantText),
             armor = armor,
-            knownFactIds = assistantPersona.runtime.currentSpec().let { emptySet<String>() },
+            knownFactIds = knownFactIds(),
             hormonesPortrait = portrait,
             lastPerformance = currentPerformance()?.line,
         )
@@ -2214,7 +2236,7 @@ class AppContainer(context: Context) {
             trace = directorTrace,
             turnIndex = turn,
             dayIndex = System.currentTimeMillis() / 86_400_000L,
-            knownFactIds = assistantPersona.runtime.currentSpec().let { emptySet<String>() },
+            knownFactIds = knownFactIds(),
         )
         directorTrace = accepted.trace
         backgroundRuns++
@@ -2229,6 +2251,13 @@ class AppContainer(context: Context) {
                 ),
                 hourOfDay = directorHour,
             )
+        }
+        // ★ 2026-11-21：**小事终于有了去处**。
+        //   ⚠️ 它不进状态（不进激素、不进 PersonaState）—— 见 DirectorOutput.smallMoments
+        //      的注释："混在一起会让「窗外下雨」变成「所以她很抑郁」"。
+        if (accepted.smallMoments.isNotEmpty()) {
+            momentSlot.offer(accepted.smallMoments)
+            Timber.i("环境小事：%s", momentSlot.currentLines().joinToString("／"))
         }
         // ⚠️ 提议的事实**不自动入库** —— 需要用户确认（见 WorldBook.withFact）。
         //    这里只记日志，等世界书面板做出来再走确认流程。
@@ -3085,6 +3114,7 @@ class AppContainer(context: Context) {
         }
     }
 
+
     // ══════════════════════════════════════════════════════════════
     //  ★ 破甲档位（2026-10-29）
     // ══════════════════════════════════════════════════════════════
@@ -3311,7 +3341,8 @@ class AppContainer(context: Context) {
     /** 当前库里的全部原子（同步读，供提示词与界面）。 */
     fun memoryAtoms(): List<com.pocketagent.memorylogic.Atom> {
         atomCache?.let { return it }
-        val loaded = atomStore.loadAll()
+        // ★ 读的是**共享视图**（角色/工作台 + 在场），见 sharedAtomStore
+        val loaded = sharedAtomStore.loadAll()
         atomCache = loaded
         return loaded
     }
@@ -3370,13 +3401,28 @@ class AppContainer(context: Context) {
         )
     }
 
+    /**
+     * **三个场景共用的读视图**（2026-11-21）。
+     *
+     * ⚠️ 只合并**读**：写仍然各归各的库（角色/工作台写 [atomStore]，
+     *    在场写 [lifeformAtomStore]），这样"这句话是在哪个场景说的"还留着。
+     *    合并的是内容 —— 用户在「在场」里说过的事，切回角色聊天她也该记得。
+     */
+    private val sharedAtomStore: com.pocketagent.memorylogic.AtomStore by lazy {
+        com.pocketagent.memorylogic.CompositeAtomStore(
+            primary = atomStore,
+            others = listOf(lifeformAtomStore),
+        )
+    }
+
     @Volatile
     private var lifeformAtomCache: List<com.pocketagent.memorylogic.Atom>? = null
 
     /** 在场模式库里的全部原子。 */
     fun lifeformMemoryAtoms(): List<com.pocketagent.memorylogic.Atom> {
         lifeformAtomCache?.let { return it }
-        val loaded = runCatching { lifeformAtomStore.loadAll() }.getOrElse {
+        // ★ 同样读共享视图：从角色聊天切到「在场」，她不该突然失忆
+        val loaded = runCatching { sharedAtomStore.loadAll() }.getOrElse {
             Timber.w(it, "在场记忆读取失败（按空处理）")
             emptyList()
         }
@@ -4019,11 +4065,71 @@ class AppContainer(context: Context) {
     @Volatile
     private var ttsProbeStarted = false
 
+    /**
+     * 把一句话变成**真正发得出去**的语音请求。
+     *
+     * 为什么不直接 new 一个 `SpeechRequest(text = clean)`：
+     *  · 厂商有字数上限（BreezeBlue 云端 1000 字），超了就是 400，一句也念不出来；
+     *  · 上限、能否带 instructions、能不能内嵌标签，全在 [com.pocketagent.data.VoiceSpeechPlanner]
+     *    与 `:voicelogic` 里算过一遍 —— 这里再手搓一份，迟早两边不一致。
+     *
+     * ⚠️ 标签语气目前还传不进来：clip 的文本在上游已经被 [spokenForm] 剥干净了
+     *    （`SpeechText.toSpeech` 删掉 `[叹气]` `*动作*`）。要让标签真的影响语气，
+     *    得让 clip 文本保留标签、只在上屏时剥 —— 那会改动缓存键与条子长度显示，
+     *    留到下一轮单独做。这里先把"超长切段"和"厂商能力"这两件确定的事接上。
+     */
+    private fun speechRequestsFor(
+        text: String,
+        providerId: String,
+        voiceId: String?,
+    ): List<com.pocketagent.provider.api.SpeechRequest> {
+        val fallback = listOf(
+            com.pocketagent.provider.api.SpeechRequest(
+                text = text,
+                format = com.pocketagent.provider.api.AudioFormat.PCM,
+                voiceId = voiceId,
+            ),
+        )
+        val profile = com.pocketagent.provider.ttsopenai.TtsProfiles.byId(providerId) ?: return fallback
+        return runCatching {
+            val plan = com.pocketagent.data.VoiceSpeechPlanner.plan(
+                reply = text,
+                profile = profile,
+                voiceId = voiceId,
+            )
+            com.pocketagent.data.VoiceSpeechPlanner.splitRequests(plan)
+                .map { it.copy(format = com.pocketagent.provider.api.AudioFormat.PCM) }
+                .filter { it.text.isNotBlank() }
+                .ifEmpty { fallback }
+        }.getOrElse {
+            Timber.w(it, "语音请求规划失败（%s），退回单条请求", providerId)
+            fallback
+        }
+    }
+
     fun voiceClips(reply: String): List<com.pocketagent.voicelogic.VoiceNote.Clip> {
         val clean = spokenForm(reply)
         if (clean.isBlank()) return emptyList()
-        return voiceNoteStore.plan(clean)
+        // ★ 2026-11-22：套上真实时长。
+        //
+        //   切分只能按字数**估**（合成要网络与 Key），但屏幕上那条"12″"
+        //   是用户在决定"要不要点"的依据 —— 估 12″ 播 17″ 会被当成坏了。
+        //   真实时长在合成结束那一刻就知道了，存在 clipDurations 里，
+        //   所以这一轮之后（以及命中缓存时）显示的都是真值。
+        return com.pocketagent.voicelogic.VoiceNote.withRealDurations(
+            clips = voiceNoteStore.plan(clean),
+            durations = clipDurations,
+        )
     }
+
+    /**
+     * 已知的真实时长（键 = 这一条要念的话，值 = 含末尾静音的毫秒）。
+     *
+     * ⚠️ 只活在内存里，不落盘：它是**缓存文件的附属信息**，而缓存文件的
+     *    键含音色与厂商，单独存一张表就会和缓存对不上。重启后第一轮
+     *    回到估算值，等 prefetch 命中缓存或重新合成时再补上。
+     */
+    private val clipDurations = java.util.concurrent.ConcurrentHashMap<String, Int>()
 
     /**
      * 把这条回复的语音提前合成并写盘。
@@ -4048,17 +4154,22 @@ class AppContainer(context: Context) {
                     val clean = clip.text.trim()
                     if (clean.isEmpty()) continue
                     val key = voiceNoteStore.keyOf(clean, credential.voiceOverride, null)
-                    if (voiceNoteStore.load(key) != null) continue
-                    val request = com.pocketagent.provider.api.SpeechRequest(
-                        text = clean,
-                        format = com.pocketagent.provider.api.AudioFormat.PCM,
-                        voiceId = credential.voiceOverride,
-                    )
+                    if (voiceNoteStore.load(key) != null) {
+                        // 已经合成过：把真实时长补进表，这一轮就能显示对的数字。
+                        voiceNoteStore.cachedDurationMs(key)?.let { raw ->
+                            clipDurations[com.pocketagent.voicelogic.VoiceNote.key(clean)] =
+                                com.pocketagent.voicelogic.VoiceNote.paddedMs(raw)
+                        }
+                        continue
+                    }
+                    val requests = speechRequestsFor(clean, provider.id, credential.voiceOverride)
                     val sink = java.io.ByteArrayOutputStream()
                     val ok = runCatching {
-                        provider.synthesize(request, credential).collect { chunk ->
-                            if (chunk is com.pocketagent.provider.api.AudioChunk.Audio) {
-                                sink.write(chunk.bytes)
+                        for (request in requests) {
+                            provider.synthesize(request, credential).collect { chunk ->
+                                if (chunk is com.pocketagent.provider.api.AudioChunk.Audio) {
+                                    sink.write(chunk.bytes)
+                                }
                             }
                         }
                     }.onFailure { t -> Timber.w(t, "语音预生成失败（%s）", provider.id) }.isSuccess
@@ -4066,6 +4177,10 @@ class AppContainer(context: Context) {
                     val bytes = stripRiffHeader(sink.toByteArray())
                     if (bytes.isEmpty()) continue
                     voiceNoteStore.save(key, bytes)
+                    clipDurations[com.pocketagent.voicelogic.VoiceNote.key(clean)] =
+                        com.pocketagent.voicelogic.VoiceNote.paddedMs(
+                            com.pocketagent.voicelogic.VoiceNote.pcmDurationMs(bytes.size),
+                        )
                 }
             }
         }
@@ -4091,18 +4206,22 @@ class AppContainer(context: Context) {
             val key = voiceNoteStore.keyOf(clean, credential.voiceOverride, null)
             val cached = voiceNoteStore.load(key)
             Timber.i("语音条：厂商=%s 音色=%s 缓存=%s", provider.id, credential.voiceOverride, cached != null)
+            cached?.let { bytes ->
+                clipDurations[com.pocketagent.voicelogic.VoiceNote.key(clean)] =
+                    com.pocketagent.voicelogic.VoiceNote.paddedMs(
+                        com.pocketagent.voicelogic.VoiceNote.pcmDurationMs(bytes.size),
+                    )
+            }
             val pcm = cached ?: run {
                 // ⚠️ 合成失败必须留下痕迹：用户只看到"点了没声音"，日志里什么都没有
-                val request = com.pocketagent.provider.api.SpeechRequest(
-                    text = clean,
-                    format = com.pocketagent.provider.api.AudioFormat.PCM,
-                    voiceId = credential.voiceOverride,
-                )
+                val requests = speechRequestsFor(clean, provider.id, credential.voiceOverride)
                 val sink = java.io.ByteArrayOutputStream()
                 val ok = runCatching {
-                    provider.synthesize(request, credential).collect { chunk ->
-                        if (chunk is com.pocketagent.provider.api.AudioChunk.Audio) {
-                            sink.write(chunk.bytes)
+                    for (request in requests) {
+                        provider.synthesize(request, credential).collect { chunk ->
+                            if (chunk is com.pocketagent.provider.api.AudioChunk.Audio) {
+                                sink.write(chunk.bytes)
+                            }
                         }
                     }
                 }.onFailure { t -> Timber.w(t, "语音条合成失败（%s）", provider.id) }.isSuccess
@@ -5468,7 +5587,8 @@ class AppContainer(context: Context) {
      *    于是助理的提示词里**一条记忆都没有**。
      */
     private val memoryReader by lazy {
-        com.pocketagent.memory.MemoryReader(store = atomStore)
+        // ★ 2026-11-21：读**共享视图** —— 在「在场」里说过的事，切回聊天她也该记得
+        com.pocketagent.memory.MemoryReader(store = sharedAtomStore)
     }
 
     private val assistantPrompt by lazy {
@@ -5603,8 +5723,22 @@ class AppContainer(context: Context) {
             //    所以 L0 里的人称裁决拿不到 —— 用户自己写的角色设定又是第三人称口吻
             //    （「她是一个……」），模型很容易读成"用户在扮演这个角色"。
             //    这段放在最前面，先把"写它的是他、被写的是你"钉死，再给设定。
+            //
+            // ★ 2026-11-21：**把状态段借回来**。整条替换的代价是 L3 一起没了 ——
+            //    自定义角色于是永远不知道自己累不累、在不在生理期、体检里有没有贫血。
+            //    用户这轮的原话是"必须验证身体设定会不会真的影响行为"，而自定义角色
+            //    正是默认用法 ⇒ 人设仍由用户写，只把人设之外的"此刻"补回去。
+            //    ⚠️ 只补 L3，不补 L5 的去味层：那一层与用户写的口吻容易打架。
+            val stateNow = runCatching {
+                assistantPrompt.stateOnly(
+                    performance = currentPerformance(),
+                    presence = sw.presence,
+                    moments = currentMoments(),
+                )
+            }.getOrDefault("")
             com.pocketagent.personalogic.PromptRoles.settingHeader() + "\n\n" +
-                custom.describeForPrompt() + "\n\n" + capability
+                custom.describeForPrompt() + "\n\n" + capability +
+                if (stateNow.isBlank()) "" else "\n\n" + stateNow
         } else {
             // ★ 2026-11-02：把"这一句"交给记忆检索 —— 不传的话
             //    每轮都会想起同样的事，那不是记忆，是背景板。
@@ -5623,6 +5757,8 @@ class AppContainer(context: Context) {
                 //      现在两者只有在场模式同时成立，但将来要给别的模式单独开
                 //      「会去吃饭但不算活着」时，这里不该跟着改。
                 presence = sw.presence,
+                // ★ 2026-11-21：导演给的"这会儿周围" 0..2 句
+                moments = currentMoments(),
             )
         }
         // ★ 2026-11-16：**用户自己的档案**在这里进提示词（「关于你」页）。
@@ -7006,6 +7142,13 @@ class AppContainer(context: Context) {
          *   低于这个数就吵架，用户会觉得"这个陌生人凭什么凶我"。
          */
         private const val DEEP_TURNS_THRESHOLD = 60
+
+        /**
+         * 内测激活写进加密库的那条凭据的标签。
+         *
+         * ★ 存在的唯一理由：内测结束后用户要能**一眼认出该删哪一条**。
+         *   写成一串随机 id 同样能用，但那时"删掉内测 Key"这件事就变成了考古。
+         */
 
         /**
          * 用户上次把「模型出口 / 能力桥」开着没有。

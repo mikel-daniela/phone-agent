@@ -267,6 +267,58 @@ class IntentClassifierTest {
         }
     }
 
+    // ═══════════════════════════════════════════════════════════
+    //  模式这一层：工具常驻的开关必须真的起作用
+    // ═══════════════════════════════════════════════════════════
+    //
+    //  ⚠️ 这几条钉的是 2026-11-22 审出来的一个真缺陷：
+    //     `ChatMode.Switches.toolsAlwaysOn` 在矩阵里写着（只有工作模式 true），
+    //     可真正决定"工具挂不挂"的是 `ChatPort` 里写死的 `else if (isWorkMode)`。
+    //     开关是装饰 ⇒ 将来给别的模式开工具常驻，改矩阵不会有任何效果，
+    //     只会在真机上表现成"这个模式说起来该常驻，实际上不挂"。
+
+    @Test
+    fun `工具常驻的模式不再猜意图`() {
+        // 这几句在普通模式下都会被判成纯对话（提问 / 闲聊 / 拿不准）。
+        for (text in listOf(
+            "微信怎么撤回消息",
+            "今天几号",
+            "how are you today",
+            "",
+        )) {
+            val plain = IntentClassifier.classify(text)
+            val always = IntentClassifier.decide(text, toolsAlwaysOn = true, modeLabel = "工作")
+            assertEquals(
+                "「$text」在没有工具常驻时应当保持原判定，理由：${plain.reason}",
+                plain.intent,
+                IntentClassifier.decide(text, toolsAlwaysOn = false, modeLabel = "工作").intent,
+            )
+            assertEquals(
+                "「$text」在工具常驻时必须判为要动手",
+                TurnIntent.Act,
+                always.intent,
+            )
+            assertTrue("判据要说清是哪个模式的常驻", always.reason.contains("工作"))
+            assertTrue("判据要提到工具常驻", always.reason.contains("工具常驻"))
+        }
+    }
+
+    @Test
+    fun `不给模式名时判据里不说空话`() {
+        val d = IntentClassifier.decide("今天几号", toolsAlwaysOn = true)
+        assertTrue("判据不能出现空的模式名：「${d.reason}」", d.reason.contains("这个模式"))
+        assertFalse("判据不能以「：」开头：「${d.reason}」", d.reason.startsWith("："))
+    }
+
+    @Test
+    fun `不加这一层时行为与 classify 完全一致`() {
+        for (text in listOf("打开微信", "微信怎么撤回消息", "今天几号", "")) {
+            val byDefault = IntentClassifier.decide(text)
+            val classic = IntentClassifier.classify(text)
+            assertEquals("「$text」默认路径必须与原 classify 一致", classic, byDefault)
+        }
+    }
+
     @Test
     fun `加了这些动词之后英文闲聊仍然判为纯对话`() {
         for (text in listOf(

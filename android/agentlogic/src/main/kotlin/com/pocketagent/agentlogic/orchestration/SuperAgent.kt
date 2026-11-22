@@ -111,7 +111,13 @@ class SuperAgent(
                 spoken += "第 ${index + 1} 件之前你叫停了，剩下的没做。"
                 break
             }
-            val reply = runOne("$goal（第 ${index + 1}/${goals.size} 件）", runContext)
+            // ⚠️ **不要把计数器拼进 goal**。2026-11-21 真机看到模型把这句回给了用户：
+            //    「请说明要查什么内容，以及"第 1/2 件"具体指什么」——
+            //    goal 会原样进规划器的提示词，而模型分不清"给我的书签"和
+            //    "用户说过的话"，于是拿内部编号去问用户。对用户念编号是最难查的一类 bug
+            //    （它看起来像模型在胡说，实际是我们的拼接）。
+            //    现在编号只出现在**给用户的那句话**里（见下面的 spoken）。
+            val reply = runOne(goal, runContext)
             last = reply.report
             if (!reply.report.ok) {
                 spoken += "第 ${index + 1} 件没成：${reply.spoken}"
@@ -128,12 +134,18 @@ class SuperAgent(
             attempts = emptyList(),
             summary = "没有可执行的步骤",
         )
-        val summary = if (doneCount == goals.size) {
-            "一共 ${goals.size} 件，都做完了。"
-        } else {
-            "做到第 ${doneCount + 1} 件就停了。"
+        // ⚠️ 一句一段读起来像流水账，所以这里**只说结论**：
+        //    全成 → 一句总数；一件都没成 → 一句"第一件就没成"（再补"做到第 1 件就停了"
+        //    就是同一件事说两遍，真机上看着像 bug）。
+        val summary = when {
+            doneCount == goals.size -> "一共 ${goals.size} 件，都做完了。"
+            doneCount == 0 -> ""
+            else -> "做到第 ${doneCount + 1} 件就停了。"
         }
-        return SuperReply.Finished(report, (listOf(summary) + spoken).joinToString(" "))
+        return SuperReply.Finished(
+            report = report,
+            spoken = (listOf(summary) + spoken).filter { it.isNotBlank() }.joinToString(" "),
+        )
     }
 
     /**

@@ -424,14 +424,20 @@ class ContainerChatPort(private val container: AppContainer) : ChatPort {
     //    摆两段切换）。用户否掉了那个设计 —— 模式不再是"用户偏好"，
     //    而是**"用户此刻站在哪个页面"**，由路由决定。
     val chatMode = mode
-    val isWorkMode = chatMode.isWork
-    if (isWorkMode) {
+
+    // ★★ 2026-11-22：改读**开关矩阵**，不再用 `isWork` 硬编码。
+    //   审计发现 `Switches.toolsAlwaysOn` 全库零消费 —— 矩阵里只有工作模式是
+    //   true，可真正决定"工具挂不挂"的是下面那句 `else if (isWorkMode)`。
+    //   给别的模式开工具常驻，改矩阵不会有任何效果。
+    //   同理 `willingness`：它原来只进提示词，**拒绝闸门**却是 `!isWorkMode`。
+    val toolsAlwaysOn = chatMode.switches.toolsAlwaysOn
+    if (toolsAlwaysOn) {
         Timber.i("工作台：工具常驻、不拒绝、按人格说话")
     }
 
-    // ⚠️ 工作模式下**跳过**意愿判定：用户让它办事，它答"我现在不想动"
+    // ⚠️ 关掉意愿的模式**跳过**意愿判定：用户让它办事，它答"我现在不想动"
     //    是故障不是人格。见 `ChatMode` 的差异表。
-    if (!isWorkMode && container.willingnessVerdict() ==
+    if (chatMode.switches.willingness && container.willingnessVerdict() ==
         com.pocketagent.personalogic.WillingnessVerdict.DECLINE
     ) {
         // ⚠️ 必须先 noteDeclined 再返回 —— 限频依赖它。
@@ -459,22 +465,23 @@ class ContainerChatPort(private val container: AppContainer) : ChatPort {
             reason = "用户点了「让我来做」，明确要求动手（覆盖分类器的保守判定）",
             confidence = com.pocketagent.rootlogic.IntentDecision.Confidence.HIGH,
         )
-    } else if (isWorkMode) {
-        // ★★ 2026-11-04：工作模式下**不猜** —— 工具一律挂着。
+    } else {
+        // ★★ 2026-11-04：工具常驻的模式下**不猜** —— 工具一律挂着。
         //
         // ⚠️ 为什么不是"照旧分类、只是把工具挂到纯对话路径上"：
         //    `ChatPort.kt` 的纯对话分支走的是 `chatOnly(...)`，
         //    那是一次性请求、**根本不吃工具**（见它的 KDoc）。
         //    要让它也能动手，等于把整个 agent 循环再实现一遍。
-        //    ⇒ 工作模式直接走循环。模型若只是答一句话，循环里
+        //    ⇒ 工具常驻的模式直接走循环。模型若只是答一句话，循环里
         //      一轮就收尾，代价就是这一次请求本身。
-        com.pocketagent.rootlogic.IntentDecision(
-            intent = TurnIntent.Act,
-            reason = "工作模式：工具常驻，这一轮允许它直接动手",
-            confidence = com.pocketagent.rootlogic.IntentDecision.Confidence.HIGH,
+        //
+        // ★★ 2026-11-22：判据来自 `ChatMode.Switches.toolsAlwaysOn`
+        //   （见 `IntentClassifier.decide`），不再是写死的 `isWorkMode`。
+        IntentClassifier.decide(
+            text = userText,
+            toolsAlwaysOn = toolsAlwaysOn,
+            modeLabel = chatMode.label,
         )
-    } else {
-        IntentClassifier.classify(userText)
     }
 
     Timber.i("意图判定：%s（%s）—— 输入 %d 字", decision.intent, decision.reason, userText.length)
@@ -681,7 +688,12 @@ class ContainerChatPort(private val container: AppContainer) : ChatPort {
             //   ★★ 2026-11-04 晚：工作台**还要再过一道权限**。
             //      被裁掉的工具不进清单 ⇒ 模型看不到 ⇒ 不会去调 ——
             //      比"调了再拒绝"省一整轮，而且不浪费用户的钱。
-            val tools = if (chatMode.isWork) {
+            // ★★ 2026-11-22：跟随 `toolsAlwaysOn` 而不是 `isWork`。
+            //   工具常驻意味着"给它一整套手脚"，那权限闸门就必须同时在场 ——
+            //   否则将来给别的模式开常驻，它会拿到**未经权限裁剪**的全量工具，
+            //   而工作台反而更严。角色扮演不受影响：它不走常驻分支，
+            //   仍旧按意图拿到未裁剪的清单（那是原有行为，不动）。
+            val tools = if (toolsAlwaysOn) {
                 container.toolsForPermission()
             } else {
                 container.toolsForCurrentMode()

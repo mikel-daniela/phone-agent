@@ -198,6 +198,35 @@ object IntentClassifier {
      *
      * @param text 用户这一轮的原话
      */
+    /**
+     * 一句话的最终判定 —— 含**模式**这一层。
+     *
+     * ⚠️ 为什么不把这一层留在 `ChatPort`：那里的写法是
+     *    `else if (isWorkMode) IntentDecision(Act, "工作模式：工具常驻")`，
+     *    于是 `ChatMode.Switches.toolsAlwaysOn` 这个开关**全库没人读** ——
+     *    矩阵里写着 true，实际行为由一句硬编码决定。将来给别的模式开
+     *    工具常驻，改矩阵不会有任何效果，这种"开关是装饰"的错
+     *    只能在真机上撞出来。所以收敛到这里，由 [toolsAlwaysOn] 参数驱动。
+     *
+     * @param text 用户这一轮的原话
+     * @param toolsAlwaysOn 这个模式是否工具常驻（`ChatMode.Switches.toolsAlwaysOn`）
+     * @param modeLabel 模式在界面上的叫法，只用于写判据
+     */
+    fun decide(
+        text: String,
+        toolsAlwaysOn: Boolean = false,
+        modeLabel: String = "",
+    ): IntentDecision = if (toolsAlwaysOn) {
+        val who = modeLabel.ifBlank { "这个模式" }
+        IntentDecision(
+            TurnIntent.Act,
+            "$who：工具常驻，这一轮允许它直接动手",
+            IntentDecision.Confidence.HIGH,
+        )
+    } else {
+        classify(text)
+    }
+
     fun classify(text: String): IntentDecision {
         val raw = text.trim()
 

@@ -3099,6 +3099,17 @@ class TasksViewModel(
                     //    只有大图才转 JPEG。写死 jpeg 会让 PNG 的
                     //    data URI 前缀与实际字节不一致 —— 多数厂商会 400。
                     val pending = pendingImages.remove(taskId)
+                    // ★★ 2026-11-21：**流式上屏也要剥声音标签**。
+                    //
+                    // 用户看的是 `note`，而它原来是 `base + delta` 原样拼的：
+                    // 模型写到一半的 `[叹气]`、`*轻轻点头*` 会先冒到屏幕上，
+                    // 等这一轮结束才被 `VoiceTags.visibleText` 换成净台词 ——
+                    // 也就是**先出现再消失**，那一瞬间的闪烁比没有标签更糟。
+                    //
+                    // ⚠️ 用 `StreamingVoiceTagFilter` 而不是每片都调 `visibleText`：
+                    //    分片会把 `[叹` 和 `气]` 拆到两次回调里，逐片替换永远认不出标签
+                    //    （它这时才第一次有生产调用方 —— 造出来时零引用）。
+                    val tagFilter = com.pocketagent.voicelogic.StreamingVoiceTagFilter()
                     chat!!.send(
                         history = history + ChatMessage.user(prompt),
                         compressedMemory = compressed,
@@ -3134,10 +3145,20 @@ class TasksViewModel(
                         onDelta = { delta ->
                             // ⚠️ 只在 Running 时接字：用户已经中止/失败了，
                             //    后台仍在到的分片不能把界面重新写回"有内容"。
-                            update(taskId) {
-                                if (it.state != TaskState.Running) return@update it
-                                val base = if (streamStarted.getAndSet(true)) it.note else ""
-                                it.copy(note = base + delta, perceptionTier = 0)
+                            // ⚠️ 过滤在 `update` 外面做：它要按顺序吃进每一片，
+                            //    放进 `update`（可能被丢弃/并发）会漏字。
+                            val visible = tagFilter.feed(delta)
+                            if (visible.isNotEmpty()) {
+                                update(taskId) {
+                                    if (it.state != TaskState.Running) return@update it
+                                    val base = if (streamStarted.getAndSet(true)) it.note else ""
+                                    it.copy(note = base + visible, perceptionTier = 0)
+                                }
+                            } else {
+                                update(taskId) {
+                                    if (it.state != TaskState.Running) it
+                                    else it.copy(perceptionTier = 0)
+                                }
                             }
                         },
                     )

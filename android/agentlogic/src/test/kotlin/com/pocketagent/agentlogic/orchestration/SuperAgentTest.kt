@@ -134,11 +134,23 @@ class SuperAgentTest {
         val finished = reply as SuperAgent.SuperReply.Finished
         assertFalse(finished.report.ok)
         assertTrue(finished.spoken.contains("第 1 件没成"))
+        // ⚠️ 一件都没成时**不许**再说「做到第 1 件就停了」—— 真机上那是两句话
+        //    讲同一件事，读起来像 bug（用户的原话截图在 2026-11-21 的会话里）。
+        assertFalse(
+            "全失败时重复播报了进度：${finished.spoken}",
+            finished.spoken.contains("就停了"),
+        )
         // ⚠️ 不能断言 planner.calls == 1：第一件失败会触发重规划（这是设计），
         // 所以 planner 会被再问一次。要钉住的是**第二件根本没开始**。
         assertFalse(
             "链条在第一件失败后仍开始了第二件：${planner.goals}",
-            planner.goals.any { it.contains("第 2/2 件") },
+            planner.goals.any { it.contains("读一下屏幕") },
+        )
+        // ⚠️ 2026-11-21 真机：编号曾经被拼进 goal ⇒ 模型拿「第 1/2 件」去问用户。
+        //    goal 是给规划器的，不是给用户听的话；这条测试钉住这个边界。
+        assertFalse(
+            "内部编号漏进了给规划器的 goal：${planner.goals}",
+            planner.goals.any { it.contains("件）") || it.contains("件)") },
         )
     }
 
