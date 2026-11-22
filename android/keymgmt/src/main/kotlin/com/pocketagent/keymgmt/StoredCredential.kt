@@ -49,6 +49,17 @@ data class StoredCredential(
     val statusDetail: String?,
     val modelCount: Int?,
     val isDefault: Boolean,
+
+    /**
+     * 用户指定的模型名（覆盖 Provider 默认值）；null = 用默认值。
+     *
+     * ★ 2026-11-20：为「自定义语音端点」加的。自建网关/聚合转发要求
+     *   一个特定模型名，而那是用户私有的 —— 我们只能让用户填。
+     */
+    val modelOverride: String? = null,
+
+    /** 用户指定的音色 id（覆盖 Provider 默认值）；null = 用默认值 */
+    val voiceOverride: String? = null,
 ) {
     /**
      * 界面上实际显示的名字。

@@ -106,6 +106,21 @@ data class CredentialEntity(
      *    而 Room 不生成这种约束，最终仍要落到应用层守。
      */
     val isDefault: Boolean,
+
+    /**
+     * 用户指定的模型名（覆盖 Provider 默认值）；null = 用默认值。
+     *
+     * ★ 2026-11-20 晚由 v4 → v5 迁移新增。服务对象是「自定义语音端点」：
+     *   自建网关/聚合转发（OneAPI、New-API 之类）要求一个特定的模型名，
+     *   而那是用户私有的，不可能预置进我们的配置表。
+     *
+     * ⚠️ 存的是**明文**，但里面没有秘密 —— 它就是要发给厂商的那个字符串
+     *    （与 [label] 同级别）。真正的 Key 仍然只有 [ciphertext] 一份。
+     */
+    val modelOverride: String? = null,
+
+    /** 用户指定的音色 id（覆盖 Provider 默认值）；null = 用默认值 */
+    val voiceOverride: String? = null,
 ) {
     // data class 带 ByteArray 时自动生成的 equals/hashCode 是**引用比较**，
     // 会导致两个内容相同的实体被判为不等 —— 在测试里表现为"明明写进去了却查不出来"。
@@ -126,7 +141,9 @@ data class CredentialEntity(
                 lastStatus == other.lastStatus &&
                 lastStatusDetail == other.lastStatusDetail &&
                 modelCount == other.modelCount &&
-                isDefault == other.isDefault
+                isDefault == other.isDefault &&
+                modelOverride == other.modelOverride &&
+                voiceOverride == other.voiceOverride
             )
 
     override fun hashCode(): Int {
@@ -144,6 +161,8 @@ data class CredentialEntity(
         result = 31 * result + (lastStatusDetail?.hashCode() ?: 0)
         result = 31 * result + (modelCount ?: 0)
         result = 31 * result + isDefault.hashCode()
+        result = 31 * result + (modelOverride?.hashCode() ?: 0)
+        result = 31 * result + (voiceOverride?.hashCode() ?: 0)
         return result
     }
 

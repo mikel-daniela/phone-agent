@@ -50,6 +50,12 @@ class ResolvedCredential(
 
     /** 额外请求头（自定义 Provider 场景） */
     val extraHeaders: Map<String, String> = emptyMap(),
+
+    /** 用户指定的模型名（覆盖 Provider 默认值）；null = 用默认值 */
+    val modelOverride: String? = null,
+
+    /** 用户指定的音色 id（覆盖 Provider 默认值）；null = 用默认值 */
+    val voiceOverride: String? = null,
 ) {
     /** 用完立即清零。放在 `finally` 里。 */
     fun clear() {
@@ -72,6 +78,8 @@ class ResolvedCredential(
             apiKey = apiKey,
             baseUrlOverride = baseUrlOverride,
             extraHeaders = extraHeaders,
+            modelOverride = modelOverride,
+            voiceOverride = voiceOverride,
         )
 }
 

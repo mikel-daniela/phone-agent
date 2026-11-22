@@ -144,6 +144,8 @@ class GatewayCredentialSource(
             //   这就是"网关必须等解密后才知道用哪家 Provider"的原因。
             providerId = entity.providerId,
             baseUrlOverride = entity.baseUrlOverride,
+            modelOverride = entity.modelOverride,
+            voiceOverride = entity.voiceOverride,
         )
     }
 }

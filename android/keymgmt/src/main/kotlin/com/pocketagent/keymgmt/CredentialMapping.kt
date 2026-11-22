@@ -2,6 +2,8 @@ package com.pocketagent.keymgmt
 
 import com.pocketagent.core.database.entity.CredentialCheckStatus
 import com.pocketagent.core.database.entity.CredentialEntity
+import com.pocketagent.keylogic.ApiKeyRecognizer
+import com.pocketagent.keylogic.KeyRecognition
 import com.pocketagent.provider.api.KeyValidationResult
 import com.pocketagent.provider.api.ProviderException
 
@@ -40,6 +42,8 @@ internal fun CredentialEntity.toDomain(providerDisplayName: String): StoredCrede
         statusDetail = lastStatusDetail,
         modelCount = modelCount,
         isDefault = isDefault,
+        modelOverride = modelOverride,
+        voiceOverride = voiceOverride,
     )
 
 // ═══════════════════════════════════════════════════════════════
@@ -184,6 +188,29 @@ internal object CredentialInput {
     }
 
     /**
+     * 「这看起来是 XX 的 key」——给用户的一句提示。
+     *
+     * ★ 定位是**提示**，不是校验。返回 null 表示没什么值得说的。
+     *
+     * ⚠️ 绝对不要拿它的返回值去拦保存：
+     *    `:keylogic` 里那张指纹表是枚举，而现实是开放的 —— 任何人今天就能开一家
+     *    新厂商、发一种新前缀的 key，我们表里没有，但那是一张完全正确的 key。
+     *    拿过时的表当门禁，等于把我们跟不上时代变成用户的错。
+     *    （同一个坑的详细说明见 `:keylogic` 的 ApiKeyRecognizer 类注释。）
+     *
+     * ⚠️ 不认识的格式（[KeyRecognition.Unknown]）返回 null 而不是「未识别」：
+     *    界面上每敲一个字符都冒出一行「未识别」，用户会以为自己做错了什么。
+     */
+    fun describeKey(raw: String): String? {
+        // 空输入框不需要提示 —— 用户只是还没开始打字。
+        if (raw.isBlank()) return null
+        return when (val recognition = ApiKeyRecognizer.recognize(raw)) {
+            is KeyRecognition.Unknown -> null
+            else -> ApiKeyRecognizer.hint(recognition)
+        }
+    }
+
+    /**
      * 自定义 BaseUrl 的校验。
      *
      * 只在用户**填了**的时候才校验 —— 留空表示用 Provider 默认地址，
@@ -230,4 +257,27 @@ internal object CredentialInput {
             host.equals("localhost", ignoreCase = true) ||
             host == "[::1]"
     }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  给界面用的门面
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Key 格式提示的对外入口。
+ *
+ * 为什么要单独一个 public object，而不是把 [CredentialInput] 整个公开：
+ * 界面只需要"给一句话"这一件事。公开校验器意味着任何一个界面都能拿
+ * `validateKey` 去做自己的门禁 —— 而门禁是**故意**只有 [CredentialRepository]
+ * 一条路（见那里的注释）。把可公开的面积压到最小。
+ */
+object KeyFormatHints {
+
+    /**
+     * 这看起来是谁的 Key；说不出来就返回 null。
+     *
+     * ⚠️ 只用于显示。**不要**拿它的返回值决定能不能保存 ——
+     *    `:keylogic` 里那张表永远滞后于现实，认不出不等于 key 是坏的。
+     */
+    fun describe(rawKey: String): String? = CredentialInput.describeKey(rawKey)
 }

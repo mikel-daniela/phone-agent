@@ -14,6 +14,13 @@ android {
     defaultConfig {
         minSdk = libs.versions.minSdk.get().toInt()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // 本脚本会在同目录创建 consumer-rules.pro 占位文件（见 main()），
+        // 所以这里可以安全地声明它。
+        //
+        // ⚠️ 这里曾经写着"那个文件从未创建"并**省略了这条声明** —— 那是脚本
+        //    早期版本的事实。后来脚本开始创建该文件，注释与模板却没跟着改，
+        //    于是生成器与磁盘上的 26 个模块长期不一致，而"只创建不覆盖"的
+        //    行为让这个不一致永远不会被自动修正。跑 --check 就能看到。
         consumerProguardFiles("consumer-rules.pro")
     }
 
@@ -38,13 +45,9 @@ dependencies {
     implementation(project(":core:crypto"))
     implementation(project(":core:database"))
     implementation(project(":provider:api"))
-    // 网关的契约（CredentialSource / UsageRecorder）在这里，实现也在本模块。
-    // ⚠️ 方向不能反过来：网关一旦依赖 keymgmt 就拖进了 Room 与 Keystore，
-    //    而它必须保持纯 Kotlin 才能进 run_logic_tests.py 离线验证。
     implementation(project(":provider:gateway"))
-    // 调度层模型（ModelConfig / ModelTier / ModelRouter）。
-    // 它是纯 Kotlin 模块 —— 依赖它不会把 android.* 带进 keymgmt 之外的地方。
     implementation(project(":modelrouter"))
+    implementation(project(":keylogic"))
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)

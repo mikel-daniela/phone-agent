@@ -99,6 +99,62 @@ class CredentialMappingTest {
         assertNull(CredentialInput.validateKey("sk-proj-abcdefghijklmnopqrstuvwxyz0123456789"))
     }
 
+    // ───────────────────────────────────────────────────────────
+    //  Key 格式提示（:keylogic 接线）
+    // ───────────────────────────────────────────────────────────
+
+    @Test
+    fun `粘贴 BreezeBlue 的 Key 时能说出它属于哪家`() {
+        val hint = CredentialInput.describeKey("brz_Y3XIHNbh9kQmvT7pLd2s")
+
+        assertNotNull(hint)
+        assertTrue("应当点名 BreezeBlue：$hint", hint!!.contains("BreezeBlue"))
+    }
+
+    @Test
+    fun `sk-ant 会认成 Anthropic 而不是泛 sk 家族`() {
+        // 这是格式库里最容易踩的一条：sk-ant-api03- 同时也能匹配裸 sk- 家族。
+        // 认错的表现是用户拿着 Claude 的 Key 被告诉"这是 OpenAI 兼容服务"，
+        // 然后照着提示去填了个错误的 BaseUrl
+        val hint = CredentialInput.describeKey("sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGh")
+
+        assertNotNull(hint)
+        assertTrue("应当点名 Anthropic：$hint", hint!!.contains("Anthropic"))
+        assertFalse("不能被泛 sk- 家族抢先：$hint", hint!!.contains("OpenAI 兼容"))
+    }
+
+    @Test
+    fun `不认识的 Key 不给提示，也不吓唬用户`() {
+        // 格式库永远滞后于现实。认不出就什么都别说 ——
+        // 每敲一个字符都冒一行"未识别"，用户会以为自己写错了
+        assertNull(CredentialInput.describeKey("some-future-vendor-key-abc123"))
+    }
+
+    @Test
+    fun `空输入框不提示`() {
+        assertNull(CredentialInput.describeKey(""))
+        assertNull(CredentialInput.describeKey("   "))
+    }
+
+    @Test
+    fun `粘贴带空格时提示到具体的粘贴事故`() {
+        val hint = CredentialInput.describeKey("sk-ant-api03 abcdefghijklmnopqrstuvwxyz")
+
+        assertNotNull(hint)
+        assertTrue("应当说清是空格问题：$hint", hint!!.contains("空格"))
+    }
+
+    @Test
+    fun `格式提示永远不阻断保存`() {
+        // ★ 这条守卫的是本模块与 :keylogic 的边界。
+        //   提示函数的返回值只用于显示，保存与否由 validateKey 说了算 ——
+        //   一个我们没收录的新厂商 Key 必须能存进去
+        val unknown = "vendor-2027-xkcd-newformat-abcdefgh"
+
+        assertNull(CredentialInput.validateKey(unknown))
+        assertNull(CredentialInput.describeKey(unknown))
+    }
+
     // ═══════════════════════════════════════════════════════════
     //  二、自定义地址 —— 含一条安全用例
     // ═══════════════════════════════════════════════════════════
@@ -332,6 +388,51 @@ class CredentialMappingTest {
 
         assertTrue("应当包含 id 便于排查：$text", text.contains("id-1"))
         assertFalse("不应打印密文内容：$text", text.contains("[1, 2, 3]"))
+    }
+
+    // ───────────────────────────────────────────────────────────
+    //  语音覆盖项（2026-11-20：自定义端点）
+    // ───────────────────────────────────────────────────────────
+
+    @Test
+    fun `模型名与音色会从实体透传到领域模型`() {
+        // ★ 这条守的是"自定义端点能不能用"。
+        //   用户在 Key 编辑页填了模型名/音色，实体也存了，
+        //   但映射漏一个字段 —— 界面显示正常、保存成功、合成时
+        //   却用回了我们的占位默认值（tts-1 / alloy）。
+        //   症状是"我一填自己的网关就报模型不存在"，而配置页看着全对。
+        val custom = entity(purpose = CredentialPurpose.TTS).copy(
+            modelOverride = "my-gateway-tts",
+            voiceOverride = "voice-7",
+        )
+
+        val domain = custom.toDomain("自定义")
+
+        assertEquals("my-gateway-tts", domain.modelOverride)
+        assertEquals("voice-7", domain.voiceOverride)
+    }
+
+    @Test
+    fun `没填覆盖项时是 null 而不是空串`() {
+        // ⚠️ 空串与 null 在 Provider 侧语义完全不同：
+        //   null = 用默认值；空串会被原样发出去 → 上游报"参数缺失"，
+        //   而用户明明一个字都没填。这条把"没填"的表示法钉成 null。
+        val domain = entity(purpose = CredentialPurpose.TTS).toDomain("X")
+
+        assertNull(domain.modelOverride)
+        assertNull(domain.voiceOverride)
+    }
+
+    @Test
+    fun `覆盖项算进相等性`() {
+        // ⚠️ CredentialEntity 的 equals 是手写的（为了不比较密文）。
+        //   加字段时漏改 equals 的表现是：改了模型名之后，
+        //   Room 的 Flow 不认为这一行变了 → 界面不刷新，
+        //   用户以为没保存上，于是又存一遍。
+        val base = entity()
+        assertFalse(base == base.copy(modelOverride = "a"))
+        assertFalse(base == base.copy(voiceOverride = "b"))
+        assertEquals(base, base.copy(modelOverride = null, voiceOverride = null))
     }
 
     // ═══════════════════════════════════════════════════════════

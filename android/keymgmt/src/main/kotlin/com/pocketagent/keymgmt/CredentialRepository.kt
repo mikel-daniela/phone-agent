@@ -118,6 +118,10 @@ class CredentialRepository(
         label: String = "",
         baseUrlOverride: String? = null,
         purpose: CredentialPurpose = CredentialPurpose.LLM,
+        /** 用户指定的模型名；null = 用 Provider 默认值。见 [StoredCredential.modelOverride] */
+        modelOverride: String? = null,
+        /** 用户指定的音色 id；null = 用 Provider 默认值 */
+        voiceOverride: String? = null,
     ): AddCredentialResult {
         // ⚠️ 服务商要在**对应用途的那张表**里找。
         //
@@ -136,6 +140,24 @@ class CredentialRepository(
         CredentialInput.validateKey(rawKey)?.let { return AddCredentialResult.Rejected(it) }
         CredentialInput.validateBaseUrl(baseUrlOverride)?.let {
             return AddCredentialResult.Rejected(it)
+        }
+
+        // ★ 2026-11-20：「自定义」必须要地址。
+        //
+        // ⚠️ 为什么要在保存时拦，而不是等第一次合成失败再报：
+        //    自定义项的默认地址是空串（我们刻意不给假默认值，
+        //    见 `TtsProfiles.Custom` 的注释）。用户选了它却没填地址，
+        //    存下来之后每次合成都是"连不上"——而界面上一切正常，
+        //    他只会觉得"这个 App 的语音坏了"。
+        //    这里说清缺哪一步，比事后排查便宜得多。
+        if (purpose == CredentialPurpose.TTS) {
+            val provider = ttsProviders.firstOrNull { it.id == providerIdResolved }
+            if (provider?.requiresCustomEndpoint == true && baseUrlOverride.isNullOrBlank()) {
+                return AddCredentialResult.Rejected(
+                    "「${provider.displayName}」需要填接口地址 —— " +
+                        "它没有默认地址，请填上你那个端点的根地址（例如 https://your-host/v1）。",
+                )
+            }
         }
 
         val trimmedKey = rawKey.trim()
@@ -167,6 +189,10 @@ class CredentialRepository(
             lastStatusDetail = null,
             modelCount = null,
             isDefault = false,
+            // 空串按"没填"处理 —— 上游收到 model="" 会报"参数缺失"，
+            // 而界面上明明填了东西（见 ProviderCredential.modelOverride 的注释）
+            modelOverride = modelOverride?.trim()?.takeIf { it.isNotEmpty() },
+            voiceOverride = voiceOverride?.trim()?.takeIf { it.isNotEmpty() },
         )
 
         val saved = try {
@@ -362,6 +388,10 @@ class CredentialRepository(
             //   厂商拿它做路由亲和 + prompt 缓存，换来换去等于每轮都冷启动。
             //   ⚠️ 这里只是一段 UUID，不含任何用户数据。
             sessionId = entity.id,
+            // ★ 2026-11-20：自定义语音端点的模型名/音色。不透传的话，
+            //   「自定义」只能用我们预置的占位名，等于没支持。
+            modelOverride = entity.modelOverride,
+            voiceOverride = entity.voiceOverride,
         )
         probe(credential)
     }
@@ -509,6 +539,10 @@ class CredentialRepository(
             //   厂商拿它做路由亲和 + prompt 缓存，换来换去等于每轮都冷启动。
             //   ⚠️ 这里只是一段 UUID，不含任何用户数据。
             sessionId = entity.id,
+            // ★ 2026-11-20：自定义语音端点的模型名/音色。不透传的话，
+            //   「自定义」只能用我们预置的占位名，等于没支持。
+            modelOverride = entity.modelOverride,
+            voiceOverride = entity.voiceOverride,
         )
             try {
                 block(provider, credential)
@@ -534,6 +568,10 @@ class CredentialRepository(
             //   厂商拿它做路由亲和 + prompt 缓存，换来换去等于每轮都冷启动。
             //   ⚠️ 这里只是一段 UUID，不含任何用户数据。
             sessionId = entity.id,
+            // ★ 2026-11-20：自定义语音端点的模型名/音色。不透传的话，
+            //   「自定义」只能用我们预置的占位名，等于没支持。
+            modelOverride = entity.modelOverride,
+            voiceOverride = entity.voiceOverride,
         )
             try {
                 block(provider, credential)
@@ -575,6 +613,10 @@ class CredentialRepository(
             //   厂商拿它做路由亲和 + prompt 缓存，换来换去等于每轮都冷启动。
             //   ⚠️ 这里只是一段 UUID，不含任何用户数据。
             sessionId = entity.id,
+            // ★ 2026-11-20：自定义语音端点的模型名/音色。不透传的话，
+            //   「自定义」只能用我们预置的占位名，等于没支持。
+            modelOverride = entity.modelOverride,
+            voiceOverride = entity.voiceOverride,
         )
             try {
                 block(provider, credential)
@@ -613,6 +655,10 @@ class CredentialRepository(
             //   厂商拿它做路由亲和 + prompt 缓存，换来换去等于每轮都冷启动。
             //   ⚠️ 这里只是一段 UUID，不含任何用户数据。
             sessionId = entity.id,
+            // ★ 2026-11-20：自定义语音端点的模型名/音色。不透传的话，
+            //   「自定义」只能用我们预置的占位名，等于没支持。
+            modelOverride = entity.modelOverride,
+            voiceOverride = entity.voiceOverride,
         )
         try {
             probe(credential)
