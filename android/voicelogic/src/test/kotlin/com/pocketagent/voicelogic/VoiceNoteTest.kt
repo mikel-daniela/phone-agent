@@ -98,4 +98,45 @@ class VoiceNoteTest {
         // 24kHz * 16bit * 单声道 = 48000 字节/秒
         assertEquals(96_000, VoiceNote.TAIL_PAD_BYTES)
     }
+
+    @Test
+    fun `合成之后条子上的时长换成真值`() {
+        // 估出来的和真值差两秒 —— 界面必须显示后者。
+        val clips = VoiceNote.plan("我在，你说。")
+        val estimate = clips.first().estimateMs
+        val real = estimate + 5_000
+        val fixed = VoiceNote.withRealDurations(
+            clips = clips,
+            durations = mapOf(VoiceNote.key(clips.first().text) to real),
+        )
+        assertEquals(real, fixed.first().estimateMs)
+    }
+
+    @Test
+    fun `没有真实时长就保留估算值`() {
+        val clips = VoiceNote.plan("我在，你说。")
+        val same = VoiceNote.withRealDurations(clips = clips, durations = emptyMap())
+        assertEquals(clips.first().estimateMs, same.first().estimateMs)
+    }
+
+    @Test
+    fun `真实时长的键允许首尾有空白`() {
+        val clips = VoiceNote.plan("我在，你说。")
+        val fixed = VoiceNote.withRealDurations(
+            clips = clips,
+            durations = mapOf("  ${clips.first().text}  " to 9_000),
+        )
+        assertEquals(9_000, fixed.first().estimateMs)
+    }
+
+    @Test
+    fun `零或负的真实时长当作没有`() {
+        val clips = VoiceNote.plan("我在，你说。")
+        val estimate = clips.first().estimateMs
+        val fixed = VoiceNote.withRealDurations(
+            clips = clips,
+            durations = mapOf(VoiceNote.key(clips.first().text) to 0),
+        )
+        assertEquals(estimate, fixed.first().estimateMs)
+    }
 }

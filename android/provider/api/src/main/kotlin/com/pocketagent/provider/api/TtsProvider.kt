@@ -53,6 +53,18 @@ interface TtsProvider {
     /** 默认 BaseUrl；用户可覆盖 */
     val defaultBaseUrl: String
 
+    /**
+     * 这一项是「用户自己填端点」的兜底项，不是某家厂商。
+     *
+     * ★ 2026-11-20：为语音的「自定义」加的。它让**仓储层**能在
+     *   不依赖具体实现的情况下拦住一种常见错误：选了「自定义」却
+     *   没填地址，保存下来之后每次合成都是"连不上"，
+     *   而用户看不出是自己漏了一步。
+     *
+     * ⚠️ 默认 false：绝大多数 Provider 有默认地址，不需要用户填。
+     */
+    val requiresCustomEndpoint: Boolean get() = false
+
     /** 该 Provider 支持的静态能力 */
     fun capabilities(): Set<TtsCapability>
 
@@ -166,6 +178,21 @@ data class SpeechRequest(
     val format: AudioFormat = AudioFormat.MP3,
     /** 请求超时（毫秒） */
     val timeoutMs: Long = 30_000,
+
+    /**
+     * **这一句话该怎么说**（语气 / 情绪 / 节奏），自然语言写给模型听。
+     *
+     * ★ 2026-11-20：声音标签的落点。项目里的分词、降级、门控都在
+     *   `:voicelogic`（`VoiceTagParser` → `VoiceTagRenderer`），
+     *   这里只承载**已经算好的那一句英文说明**，不含任何业务判断 ——
+     *   否则每个 Provider 都要自己再实现一遍"撒娇该怎么读"。
+     *
+     * ⚠️ null / 空串 = 这条通道不支持说明，**不是**"用默认语气说"。
+     *    Provider 声明了 `supportsInstructions` 才可以指望它生效；
+     *    没声明时上层应改走 SSML 或内嵌标签，而不是把说明塞进 text
+     *    ——  把 "speak warmly" 混进正文会被**念出来**。
+     */
+    val instructions: String? = null,
 )
 
 /** 音频容器格式 */

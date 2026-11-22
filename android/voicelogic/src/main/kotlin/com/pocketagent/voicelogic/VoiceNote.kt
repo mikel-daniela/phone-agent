@@ -128,6 +128,41 @@ object VoiceNote {
     /** 真实时长 + 末尾静音 —— 界面显示用这个，别直接拿 pcmDurationMs。 */
     fun paddedMs(rawMs: Int): Int = rawMs + TAIL_PAD_MS
 
+    /**
+     * 把**已知的真实时长**套回语音条上。
+     *
+     * ═══════════════════════════════════════════════════════════
+     *  ⚠️ 为什么必须有这一步
+     * ═══════════════════════════════════════════════════════════
+     *
+     * [plan] 只能按字数**估**（合成要网络与 Key，切分是纯算术）。
+     * 真实时长要等合成完拿到 PCM 字节才知道，而那时界面早就画过一次了。
+     * 于是屏幕上一直写着估值 —— 估 12″ 播 17″，用户会以为条子坏了。
+     *
+     * 这里的约定：`durations` 里有的用真实值，没有的保留估算值。
+     * 键按 [key] 归一（去首尾空白），因为合成与显示两条路径拿到的
+     * 文本一个来自 `trim()` 后、一个来自切分结果，空格不一定一致。
+     *
+     * @param durations 键 = 这一条要念的话，值 = 含末尾静音的毫秒数
+     */
+    fun withRealDurations(
+        clips: List<Clip>,
+        durations: Map<String, Int>,
+    ): List<Clip> {
+        if (durations.isEmpty() || clips.isEmpty()) return clips
+        // ⚠️ 两边都归一：调用方传进来的键来自合成路径（`trim()` 之后），
+        //    这里的 clip.text 来自切分结果 —— 只归一一边等于永远查不到。
+        val lookup = HashMap<String, Int>(durations.size)
+        for ((k, v) in durations) lookup[key(k)] = v
+        return clips.map { clip ->
+            val real = lookup[key(clip.text)]
+            if (real == null || real <= 0) clip else clip.copy(estimateMs = real)
+        }
+    }
+
+    /** 时长表的键：只做"去首尾空白"，别做别的归一（换字就查不到了）。 */
+    fun key(text: String): String = text.trim()
+
     /** 估算一段话念多久。 */
     fun estimateMs(text: String): Int {
         val chars = text.count { !it.isWhitespace() }

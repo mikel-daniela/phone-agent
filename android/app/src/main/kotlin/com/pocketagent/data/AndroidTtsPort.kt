@@ -30,6 +30,22 @@ class AndroidTtsPort(context: Context) : TtsPort {
     private var ready = false
 
     override suspend fun speak(text: String): String = withContext(Dispatchers.Main) {
+        // ★ 2026-11-20：**系统 TTS 会把这个方括号念出来**。
+        //
+        // 在「在场」模式里模型现在会在回复里写 `[叹气]算了`（提示词教的，见
+        // `VoiceTagPrompt`）。系统引擎不认识这个标记，它会把方括号连同里面的
+        // 字一起读出来 —— 用户听到的是"左方括号 叹气 右方括号 算了"。
+        //
+        // ⚠️ 所以这里必须剥，而不是指望"标签只在联网语音里出现"：
+        //    说出去的话只有一条，走哪条引擎是运行时才定的。
+        //
+        // ⚠️ 系统引擎本来就是四档降级里最低的那一档（纯文本）——
+        //    它没有 instructions，也不吃内嵌标记，剥掉正是它该有的样子。
+        val spoken = com.pocketagent.voicelogic.VoiceTagParser.strip(text)
+        if (spoken.isBlank()) {
+            // 整句只有标签（"[叹气]"）—— 念出来会是空的，不如如实说。
+            return@withContext "（这句只有语气，没有可念的字）"
+        }
         val tts = ensureEngine()
         val result = tts.setLanguage(Locale.getDefault())
         if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
@@ -49,7 +65,7 @@ class AndroidTtsPort(context: Context) : TtsPort {
                         if (cont.isActive) cont.resumeWithException(IllegalStateException("语音引擎报错，可能是这句念不出来"))
                     }
                 })
-                val code = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+                val code = tts.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
                 if (code != TextToSpeech.SUCCESS && cont.isActive) {
                     cont.resumeWithException(IllegalStateException("语音引擎忙或没准备好（code=$code）"))
                 }
