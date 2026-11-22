@@ -135,6 +135,13 @@ class AssistantPromptBuilder(
         currentUserText: String = "",
         performance: Performance? = null,
         presence: Boolean = false,
+        /**
+         * 这一轮**周围的小事**（导演写的 `smallMoments`，见 `MomentSlot`）。
+         *
+         * ★ 2026-11-21：在此之前 `DirectorOutput.smallMoments` 零消费方 ——
+         *   导演写了"窗外在下雨"，前台模型看不到。
+         */
+        moments: List<String> = emptyList(),
     ): String {
         val spec = persona.runtime.currentSpec()
         val assembled = assembler.assemble(
@@ -156,6 +163,8 @@ class AssistantPromptBuilder(
                 performance = performance,
                 // ★ 2026-11-17：她有没有自己的此刻（只有「在场」模式 true）
                 presence = presence,
+                // ★ 2026-11-21：周围的小事（导演给的，过期就不给）
+                moments = moments,
             ),
         )
         val capability = if (canAct) CAPABILITY_BOUNDARY else CHAT_ONLY_BOUNDARY
@@ -164,6 +173,25 @@ class AssistantPromptBuilder(
             .filter { it.isNotBlank() }
             .joinToString("\n\n")
     }
+
+    /**
+     * 只取**状态那一段**（L3）—— 给自定义角色那条提示词支路用。
+     *
+     * ⚠️ 自定义角色整条替换了装配器（用户写的人设优先），于是 L3 也没了：
+     *    她永远不知道自己累不累、在不在生理期、体检报告里有没有贫血。
+     *    这里补回来的只是"此刻的身体与心情"，不碰人设。
+     */
+    fun stateOnly(
+        performance: Performance? = null,
+        presence: Boolean = false,
+        moments: List<String> = emptyList(),
+    ): String =
+        assembler.stateSection(
+            state = persona.runtime.currentState().copy(health = persona.healthReport()),
+            performance = performance,
+            presence = presence,
+            moments = moments,
+        )
 
     /**
      * 装配结果的诊断信息（给将来的"人格体检页"用；当前无消费方，但**不删** ——

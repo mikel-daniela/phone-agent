@@ -222,10 +222,26 @@ object PhysiologyEngine {
      *   1 小时还掉约 21%，4 小时约 62%，8 小时约 85% —— 补觉的
      *   边际收益递减，而不是每小时固定还半格。
      */
-    fun advance(body: Physiology, elapsedMs: Long): Physiology {
+    fun advance(
+        body: Physiology,
+        elapsedMs: Long,
+        /**
+         * 体检推导出的体质。
+         *
+         * ★ 2026-11-21：之前这个函数**看不见体质** —— `recoverRate` 在
+         *   [HealthReport.derive] 里算出来了（甲减/贫血 ⇒ SLOW），
+         *   却没有任何一个消费点，于是"恢复慢"这件事完全不影响引擎。
+         *   这是典型的"算好了没接线"。
+         */
+        profile: BodyProfile = BodyProfile.Default,
+    ): Physiology {
         if (elapsedMs <= 0L) return body
         val hours = elapsedMs.toDouble() / 3_600_000.0
-        val recovered = SleepHomeostasis.debtAfterRest(body.sleepDebtHours, hours)
+        // ★ 休息的**等效时长**按时体质缩放：恢复慢的人睡 8 小时只顶别人 4.8 小时。
+        //   ⚠️ 缩放的是"睡了多久"，不是恢复后的债值 —— 后者会让指数曲线变形，
+        //      而 SLEEP 的指数形状是文献值（τ=4.2h），不该被体质改掉。
+        val effectiveHours = (hours * profile.recoverMultiplier).coerceAtLeast(0.0)
+        val recovered = SleepHomeostasis.debtAfterRest(body.sleepDebtHours, effectiveHours)
             .coerceIn(0.0, Physiology.MAX_DEBT)
         return body.copy(sleepDebtHours = recovered)
     }

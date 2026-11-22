@@ -1,7 +1,10 @@
 package com.pocketagent.assistant
 
+import com.pocketagent.personalogic.BloodPanel
 import com.pocketagent.personalogic.DefaultPersonaTuner
 import com.pocketagent.personalogic.DeltaSource
+import com.pocketagent.personalogic.HealthReport
+import com.pocketagent.personalogic.Performance
 import com.pocketagent.personalogic.DeltaState
 import com.pocketagent.personalogic.PersonaDelta
 import com.pocketagent.personalogic.PersonaEvent
@@ -188,5 +191,77 @@ class AssistantPromptTest {
         assertTrue("应有 L0 骨骼层", d.layers.contains("L0_BONES"))
         assertTrue("预估 token 应为正", d.estimatedTokens > 0)
         assertTrue("默认人格不该超预算", !d.overBudget)
+    }
+    // ── ⑤ ★ 状态层真的进提示词（2026-11-21 审计补）──────────────────
+    //
+    // ⚠️ 这四条补的是"动态注入提示词"这一类**静默失效**：
+    //    参数一路传下去、最后没人用，界面上完全看不出来 ——
+    //    用户填了体检报告、后台 AI 写了小事与表演指导，角色却一点不受影响。
+
+    @Test
+    fun `导演写的环境小事会进提示词`() {
+        val text = AssistantPromptBuilder(persona())
+            .build(moments = listOf("窗外在下雨，楼下有人在收衣服"))
+        assertTrue("应含小事那一段：$text", text.contains("## 这会儿周围"))
+        assertTrue("小事的内容要在", text.contains("窗外在下雨"))
+    }
+
+    @Test
+    fun `没有小事时不写那一段`() {
+        val text = AssistantPromptBuilder(persona()).build(moments = emptyList())
+        assertFalse("空列表不该造出一段空标题", text.contains("## 这会儿周围"))
+    }
+
+    @Test
+    fun `体检报告的异常项会进提示词`() {
+        val p = AssistantPersona(
+            preset = PersonaPresets.MALE,
+            runtime = PersonaRuntime(DefaultPersonaTuner(PersonaPresets.MALE)),
+            healthReport = { HealthReport(blood = BloodPanel(hb = 96.0)) },
+        )
+        val text = AssistantPromptBuilder(p).build()
+        assertTrue("应含身体那一段：$text", text.contains("## 你的身体"))
+        assertTrue("贫血要如实写进去", text.contains("血红蛋白偏低"))
+    }
+
+    @Test
+    fun `表演指导会进提示词`() {
+        val p = persona()
+        // ⚠️ `Performance.isFresh` 的时间基准是 `physiology.lastActiveAtMs`，
+        //    而它只在 `recordTurn` 里推进（默认 0 = 还没交互过）。
+        //    不先记一轮，`1_795_000_000_000` 那种固定时间戳会被判成过期 ——
+        //    第一版就是这么红的，而代码是对的。
+        p.runtime.recordTurn(hourOfDay = 12.0)
+        // ⚠️ `atMs` 必须取**状态自己的时钟**，不能用 `System.currentTimeMillis()`：
+        //    `recordTurn` 先打了时间戳，之后再取"现在"就会比它晚 1ms，
+        //    而 `isFresh` 的区间是 `0..TTL` —— 负年龄**不算新鲜**。
+        //    表现是单跑绿、全量跑红（两条测试之间隔着几百毫秒的抖动）。
+        val now = p.runtime.currentState().physiology.lastActiveAtMs
+        val guide = Performance(
+            line = "今天话说得比平时短，先听着",
+            atMs = now,
+            hormonesKey = "a",
+        )
+        val text = AssistantPromptBuilder(p).build(performance = guide)
+        assertTrue("应含表演指导：$text", text.contains("## 这一句怎么演"))
+        assertTrue("指导那句话要在", text.contains("今天话说得比平时短"))
+    }
+
+    @Test
+    fun `自定义角色那支只取状态段，且与完整组装一致`() {
+        val p = AssistantPersona(
+            preset = PersonaPresets.MALE,
+            runtime = PersonaRuntime(DefaultPersonaTuner(PersonaPresets.MALE)),
+            healthReport = { HealthReport(blood = BloodPanel(hb = 96.0)) },
+        )
+        val builder = AssistantPromptBuilder(p)
+        val only = builder.stateOnly(moments = listOf("隔壁在装修"))
+        val full = builder.build(moments = listOf("隔壁在装修"))
+
+        assertTrue("只取状态段也应含身体：$only", only.contains("## 你的身体"))
+        assertTrue("只取状态段也应含小事：$only", only.contains("## 这会儿周围"))
+        // 两条支路读的是同一个状态源，身体那一段必须逐字相同 ——
+        // 否则"自定义角色"与"内置人格"看到的是两个不同的她。
+        assertTrue("完整组装里也应有同样的身体段", full.contains(only.substringAfter("## 你的身体")))
     }
 }

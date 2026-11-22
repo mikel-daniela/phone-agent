@@ -248,4 +248,57 @@ class ChatModeTest {
         assertTrue(section.contains("查不到就说查不到"))
         assertTrue(section.contains("不编"))
     }
+
+    // ── 她还是她：干活的口气 + 顺口关心 ────────────────────────
+    //
+    // ★ 2026-11-20 用户报：「工作模式非常僵硬，各种回答方式趋向模型原生回答，
+    //   只带入一点点设定。在工作模式中只关心工作，完全不会关心一下用户。」
+    //
+    // ⚠️ 根因是开关级的：`ChatMode.WORK` 把 `voiceSamples` 关了（那是撒娇腔），
+    //    `humanizer` 也关了（去味段讲"像发微信"，与"可以分行"打架）。
+    //    ⇒ 工作模式里一句"她会怎么说话"的示范都没有，只剩六条规矩；
+    //      规矩只约束下限，示范才决定像不像人。
+
+    @Test
+    fun `工作模式有她自己的口气示范`() {
+        assertTrue("接活要有一声", section.contains("## 干活时的口气"))
+        assertTrue("要有接活的样本", section.contains("「行，我看下。」"))
+        assertTrue("要有交付的样本", section.contains("「弄好了"))
+        assertTrue("要有要时间的样本", section.contains("这个得两分钟"))
+    }
+
+    @Test
+    fun `工作模式要求她还说话_不是播报腔`() {
+        // ★ 原来那条"不写动作，不写表情"容易被读成"不用说话"，
+        //   现在同一行后面补了"但话还是你说的"。
+        assertTrue(section.contains("不写动作，不写表情。"))
+        assertTrue(section.contains("但话还是你说的"))
+        assertTrue(section.contains("播报腔"))
+    }
+
+    @Test
+    fun `工作模式要顺口关心一句`() {
+        assertTrue(section.contains("## 顺口关心一句"))
+        assertTrue("关心要贴着对方的事", section.contains("跟对方有关"))
+        assertTrue("一句就够", section.contains("一句就够"))
+        assertTrue("不然会滑成客服", section.contains("更像客服"))
+    }
+
+    @Test
+    fun `关心的示范里没有客服尾巴`() {
+        // ⚠️ 反向钉子：一段"关心"的示范里如果出现"还有什么需要帮忙"，
+        //   就等于教它说客服话 —— 那正是 `HumanScore` 的 SERVICE_TAIL。
+        for (tail in listOf("还有什么需要", "还有别的吗", "希望对你有帮助", "随时告诉我")) {
+            assertFalse("关心的示范里出现了客服尾巴「$tail」", section.contains(tail))
+        }
+    }
+
+    @Test
+    fun `工作纪律自己也不像说明书`() {
+        // ★ 与 `PromptVoiceTest` 的存量体检互为补强：那里按九项判据扫，
+        //   这里只钉"这一节不能有列表符/加粗/破折号"三条最刺眼的。
+        assertFalse(section.contains("- "))
+        assertFalse(section.contains("**"))
+        assertFalse(section.contains("——"))
+    }
 }

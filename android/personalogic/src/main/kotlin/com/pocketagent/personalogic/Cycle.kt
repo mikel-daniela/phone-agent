@@ -84,6 +84,12 @@ data class Cycle(
      */
     fun momentAt(epochMs: Long): CycleMoment? {
         if (!enabled) return null
+        // ⚠️ 2026-11-21：**时间未知时不编造**。
+        //   `epochMs <= 0` 意味着"还没有过任何一次交互"（`Physiology.lastActiveAtMs` 的默认值），
+        //   而 `dayOf(0)` 恰好返回 0 = 经期第一天、`isEarlyPeriod = true` ——
+        //   于是全新安装第一次说话，提示词里就写「你这两天在生理期」。
+        //   那是凭空捏造一个身体事实，比不写这一段糟得多。
+        if (epochMs <= 0L) return null
         val d = dayOf(epochMs)
         val phase = when {
             // 经期
@@ -100,6 +106,38 @@ data class Cycle(
 
     companion object {
         const val DAY_MS = 86_400_000L
+
+        /**
+         * **由体检报告决定"这件事到底存不存在"**。
+         *
+         * ═══════════════════════════════════════════════════════════
+         *  ⚠️ 2026-11-21：此前 `Cycle` 永远是默认值
+         * ═══════════════════════════════════════════════════════════
+         *
+         * `PersonaState.cycle` 从一开始就写死 `Cycle()`（`enabled = true`、
+         * 28 天、5 天），**没有任何代码从角色设定或体检报告推导它**。
+         * 后果是：男性角色、以及体检报告里根本没有女性专项的角色，
+         * 提示词照样会写「你这两天在生理期」。
+         *
+         * 判据只认一个：`HealthReport.female`（女性专项）**在**才算有。
+         * 不按名字、不按性别标签猜 —— 体检报告是用户自己填的事实表。
+         *
+         * @param health 角色的体检报告（默认值 = 没有女性专项 = 不启用）
+         */
+        fun derivedFrom(health: HealthReport): Cycle {
+            val panel = health.female ?: return Cycle(enabled = false)
+            // ⚠️ 报告里的数值可能是极端的（用户随手填 60 天），而 `Cycle` 的
+            //    `init` 会 require 抛异常。这里先夹到合理区间 —— 抛异常会让
+            //    整段提示词组装失败，比用一个保守值糟得多。
+            val length = panel.cycleLengthDays.coerceIn(21, 40)
+            val period = panel.periodLengthDays.coerceIn(2, 10)
+            return Cycle(
+                enabled = true,
+                cycleLengthDays = length,
+                // 经期不能长于整个周期（否则 init 抛）
+                periodLengthDays = period.coerceAtMost(length - 1),
+            )
+        }
     }
 }
 

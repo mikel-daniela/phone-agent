@@ -105,6 +105,17 @@ data class HumanScore(
 
         /** 长度与最近几轮几乎一样（差 < 15%）。 */
         FLAT_LENGTH("长度和上一轮一样", 10),
+
+        /**
+         * 这一轮被外部判定为**跑出了角色**（见 [OocRepair]）。
+         *
+         * ⚠️ 为什么它不是一个"词表命中"而是一个入参：身份否认、硬拒答
+         *    在措辞上可能完全看不出来（「这个我真帮不了」），
+         *    判它的是 [OocRepair] / `RefusalDetector` 那边。
+         *    这里只负责让它**计分**，否则"文风评分"会对一次出戏视而不见 ——
+         *    那正是缺口 1 的形态。
+         */
+        FRAME_BREAK("跑出了角色", 55),
     }
 
     /** 分数落在哪一档。**标签给日志和界面用，判据只有阈值。** */
@@ -196,8 +207,16 @@ data class HumanScore(
          * @param text 这一条助理回复（模型刚说完的，或历史里的）
          * @param recent 最近的助理回复（**升序，末尾是最新**，不含 [text]）。
          *   空表 = 不做「复读 / 长度扁平」这两项 —— 第一轮没有对照，不该扣分。
+         * @param frameBroken 这一轮**已经被判为跑出角色**（[OocRepair.detect] 命中，
+         *   或 `RefusalDetector` 判 HARD）。命中的话按 [Code.FRAME_BREAK] 封顶扣，
+         *   把「措辞看着还行但框架破了」这一情形也算进分里 —— 否则文风评分
+         *   会对一次出戏视而不见（缺口 1）。
          */
-        fun of(text: String, recent: List<String> = emptyList()): HumanScore {
+        fun of(
+            text: String,
+            recent: List<String> = emptyList(),
+            frameBroken: Boolean = false,
+        ): HumanScore {
             val signals = mutableListOf<Signal>()
             val body = text.trim()
             if (body.isEmpty()) {
@@ -337,6 +356,19 @@ data class HumanScore(
                         )
                     }
                 }
+            }
+
+            // ── ⑩ 框架破了（外部判定）────────────────────────────
+            //
+            // ⚠️ 放最后、按封顶扣一次：它盖过前面所有"风格瑕疵"——
+            //    一轮里同时分点又念设定，最该说的还是"她跑出去了"。
+            //    证据只写类别，不回显原文（同 `OutputGuard` 的纪律）。
+            if (frameBroken) {
+                signals += Signal(
+                    Code.FRAME_BREAK,
+                    Code.FRAME_BREAK.ceiling,
+                    "这一轮被判定为跑出角色",
+                )
             }
 
             val ordered = signals.sortedWith(compareByDescending<Signal> { it.penalty }.thenBy { it.code.ordinal })

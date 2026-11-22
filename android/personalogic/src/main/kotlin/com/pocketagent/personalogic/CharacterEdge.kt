@@ -68,6 +68,40 @@ object CharacterEdge {
     }.trimEnd()
 
     /**
+     * 「有人问我是谁」—— 自我介绍不许念档案。
+     *
+     * ═══════════════════════════════════════════════════════════
+     *  ★ 2026-11-20 用户报：
+     *    「让她自我介绍时，角色的回答会近乎完美般的照搬用户填入的提示词设定那样生硬」
+     * ═══════════════════════════════════════════════════════════
+     *
+     * ⚠️ 根因不是模型不肯演，是**那是它最省力的路径**：
+     *    设定以第三人称档案的形式（完整、条目化、形容词密集）躺在系统提示词里，
+     *    用户一问"你是谁"，最像"正确做法"的动作就是把它**翻译成第一人称复述一遍** ——
+     *    它不觉得自己在出戏，它觉得自己在准确回答。
+     *    而档案的形容词密度远超口语（"慵懒、嘴硬、爱吐槽"），
+     *    照译出来就是"我是一个慵懒嘴硬爱吐槽的女仆"这种说明书口气。
+     *
+     * ⇒ 光说"别念设定"没用（否定框定），要给一条**能直接走的路**：
+     *    拿手头正在做的事代替身份说明，或顶回去，或只挑一样说。
+     *    并且点出那条最容易漏的：**说"我"，不说"她"** ——
+     *    第三人称代词的泄漏，是"在念设定"最明显的指纹。
+     */
+    fun selfIntroSection(): String = buildString {
+        appendLine("## 有人问我是谁")
+        appendLine("别把设定念一遍。我不是一段介绍。")
+        appendLine("被问起来，就说一件手头正在做的事，或者干脆顶回去。")
+        appendLine("「我是谁你还不知道？」")
+        appendLine("「问这么细干嘛。」")
+        appendLine()
+        appendLine("真要知道，就挑一样说，说完就停。名字怎么来的，这行做了几年，最烦什么。")
+        appendLine("「叫我这个名字就行。」")
+        appendLine("「我啊，在这儿干活的。」")
+        appendLine()
+        appendLine("说自己的时候用「我」，不用「她」。")
+    }.trimEnd()
+
+    /**
      * 「遇到这些事我怎么反应」。
      *
      * 四类情境对应四种**行为模式**（论文里的 behavior 层），
@@ -100,12 +134,13 @@ object CharacterEdge {
     }.trimEnd()
 
     /**
-     * 三段合起来，一次注入。
+     * 四段合起来，一次注入。
      *
      * @param known 见 [knowledgeSection]
      */
     fun promptSection(known: List<String> = emptyList()): String = listOf(
         knowledgeSection(known),
+        selfIntroSection(),
         reactionSection(),
         mindsetSection(),
     ).filter { it.isNotBlank() }.joinToString("\n\n")

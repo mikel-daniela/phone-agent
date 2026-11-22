@@ -30,7 +30,22 @@ class CycleEngineTest {
 
     @Test
     fun `第零天是经期第一天`() {
-        assertEquals(CycleMoment(CyclePhase.MENSTRUAL, 0), cycle.momentAt(day(0)))
+        // ⚠️ 2026-11-21：用 `day(28)`（第二十八天，正好是下一轮第 0 天），
+        //   不用 `day(0)` —— 时间戳 0 已按"时间未知"处理（见下一条测试）。
+        assertEquals(CycleMoment(CyclePhase.MENSTRUAL, 0), cycle.momentAt(day(28)))
+    }
+
+    @Test
+    fun `时间戳为零意味着时间未知 不编造经期`() {
+        // ══════════════════════════════════════════════════════
+        //  ★ 2026-11-21 真机级 bug
+        // ══════════════════════════════════════════════════════
+        //  `Physiology.lastActiveAtMs` 的默认值是 0（还没交互过）。
+        //  旧实现里 `dayOf(0) = 0` = 经期第一天、`isEarlyPeriod = true` ——
+        //  于是全新安装第一次说话，提示词就写「你这两天在生理期」。
+        //  那是凭空捏造一个身体事实。
+        assertNull("零时刻不许算出生理期", cycle.momentAt(0L))
+        assertNull("负时刻同样不编", cycle.momentAt(-1L))
     }
 
     @Test
@@ -59,8 +74,8 @@ class CycleEngineTest {
     @Test
     fun `周期会循环`() {
         // 第 28 天 = 下一轮第 0 天
-        assertEquals(cycle.momentAt(day(0))?.phase, cycle.momentAt(day(28))?.phase)
-        assertEquals(cycle.momentAt(day(3))?.phase, cycle.momentAt(day(31))?.phase)
+        assertEquals(cycle.momentAt(day(28))?.phase, cycle.momentAt(day(56))?.phase)
+        assertEquals(cycle.momentAt(day(31))?.phase, cycle.momentAt(day(59))?.phase)
     }
 
     @Test
@@ -110,6 +125,44 @@ class CycleEngineTest {
     fun `平时没有影响`() {
         assertEquals(0, CycleEngine.energyModifier(CycleMoment(CyclePhase.FOLLICULAR, 8)))
         assertEquals(0, CycleEngine.energyModifier(CycleMoment(CyclePhase.LUTEAL, 22)))
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  ★ 2026-11-21：有没有这件事，由体检报告说了算
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `体检报告没有女性专项就没有生理期`() {
+        // 男性角色、或者用户压根没填女性专项 —— 都不该出现经期文案
+        val derived = Cycle.derivedFrom(HealthReport())
+        assertTrue("没有女性专项时应当停用", !derived.enabled)
+        assertNull("停用后不产生任何周期时刻", derived.momentAt(day(28)))
+        assertNull("也就不该写进提示词", CycleEngine.promptLine(derived.momentAt(day(28))))
+    }
+
+    @Test
+    fun `体检报告的女性专项决定周期长度`() {
+        val health = HealthReport(
+            female = FemalePanel(cycleLengthDays = 30, periodLengthDays = 4),
+        )
+        val derived = Cycle.derivedFrom(health)
+        assertTrue("有女性专项就该启用", derived.enabled)
+        assertEquals(30, derived.cycleLengthDays)
+        assertEquals(4, derived.periodLengthDays)
+        // 周期 30 天 ⇒ day(30) 才是下一轮的第 0 天（经期第一天）
+        assertEquals(CyclePhase.MENSTRUAL, derived.momentAt(day(30))?.phase)
+    }
+
+    @Test
+    fun `报告里填了离谱的数字也不会崩`() {
+        // 用户随手填 60 天 / 30 天 —— `Cycle.init` 会 require 抛异常，
+        // 而抛异常会让整段提示词组装失败。必须夹到合理区间。
+        val wild = Cycle.derivedFrom(
+            HealthReport(female = FemalePanel(cycleLengthDays = 60, periodLengthDays = 30)),
+        )
+        assertTrue("周期被夹进 21..40", wild.cycleLengthDays in 21..40)
+        assertTrue("经期被夹进 2..10", wild.periodLengthDays in 2..10)
+        assertTrue("经期必须短于周期", wild.periodLengthDays < wild.cycleLengthDays)
     }
 
     // ═══════════════════════════════════════════════════════════

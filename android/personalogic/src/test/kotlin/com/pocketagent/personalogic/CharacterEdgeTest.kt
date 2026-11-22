@@ -22,36 +22,75 @@ import org.junit.Test
 class CharacterEdgeTest {
 
     // ═══════════════════════════════════════════════════════════
-    //  三段齐全
+    //  四段齐全
     // ═══════════════════════════════════════════════════════════
 
     @Test
-    fun 三段标题都在() {
+    fun 四段标题都在() {
         val all = CharacterEdge.promptSection()
         assertTrue(all, all.contains("## 我知道的和不知道的"))
+        assertTrue(all, all.contains("## 有人问我是谁"))
         assertTrue(all, all.contains("## 遇到这些事我怎么反应"))
         assertTrue(all, all.contains("## 开口之前"))
     }
 
     @Test
-    fun 三段按顺序拼() {
+    fun 四段按顺序拼() {
         val all = CharacterEdge.promptSection()
-        assertTrue(
-            all,
-            all.indexOf("## 我知道的和不知道的") < all.indexOf("## 遇到这些事我怎么反应"),
-        )
-        assertTrue(
-            all,
-            all.indexOf("## 遇到这些事我怎么反应") < all.indexOf("## 开口之前"),
-        )
+        val order = listOf(
+            "## 我知道的和不知道的",
+            "## 有人问我是谁",
+            "## 遇到这些事我怎么反应",
+            "## 开口之前",
+        ).map { all.indexOf(it) }
+        assertTrue(order.toString(), order.all { it >= 0 })
+        assertTrue("顺序不对：$order", order == order.sorted())
     }
 
     @Test
     fun 段与段之间一个空行() {
         val all = CharacterEdge.promptSection()
         assertTrue(all, all.contains("## 我知道的和不知道的"))
-        // 每两段之间恰好 "\n\n"（三段 → 两个分隔）
-        assertTrue(all, all.split("\n\n## ").size == 3)
+        // 每两段之间恰好 "\n\n"（四段 → 三个分隔）
+        assertEquals(4, all.split("\n\n## ").size)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  自我介绍：不许念档案
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun 自我介绍第一句就是别念设定() {
+        // ★ 2026-11-20 用户报：问她"你是谁"，她把人设文本近乎原样念出来。
+        val s = CharacterEdge.selfIntroSection()
+        assertTrue(s, s.contains("别把设定念一遍"))
+    }
+
+    @Test
+    fun 自我介绍给了三条能走的路() {
+        // ⚠️ 只禁"念设定"会让她卡住 —— 必须给出可执行的动作。
+        val s = CharacterEdge.selfIntroSection()
+        assertTrue("要允许顶回去", s.contains("顶回去"))
+        assertTrue("要允许只说一样", s.contains("挑一样说"))
+        assertTrue("要给得出话的样本", s.contains("「我啊"))
+    }
+
+    @Test
+    fun 自我介绍点出第三人称的泄漏() {
+        // ★ 说"她是一个……"就是"在念设定"最明显的指纹。
+        val s = CharacterEdge.selfIntroSection()
+        assertTrue(s, s.contains("用「我」"))
+        assertTrue(s, s.contains("不用「她」"))
+    }
+
+    @Test
+    fun 自我介绍不带形容词堆砌() {
+        // ⚠️ 这一节自己不能示范"形容词密集"的写法 ——
+        //    用户抱怨的正是"慵懒、嘴硬、爱吐槽"那种档案腔。
+        val s = CharacterEdge.selfIntroSection()
+        for (word in listOf("慵懒", "嘴硬", "御姐", "性格", "人设")) {
+            assertFalse("不该出现「$word」：\n$s", s.contains(word))
+        }
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -94,12 +133,12 @@ class CharacterEdgeTest {
     }
 
     @Test
-    fun known不影响另外两段() {
-        // ⚠️ 这里断言的是"后两段逐字不变"，不是"前缀相同" ——
+    fun known不影响另外三段() {
+        // ⚠️ 这里断言的是"后三段逐字不变"，不是"前缀相同" ——
         //    known 本来就该改第一段（它就是给第一段用的）。
         val a = CharacterEdge.promptSection()
         val b = CharacterEdge.promptSection(listOf("做饭"))
-        val marker = "## 遇到这些事我怎么反应"
+        val marker = "## 有人问我是谁"
         assertEquals(a.substringAfter(marker), b.substringAfter(marker))
     }
 

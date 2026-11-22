@@ -99,7 +99,15 @@ class PersonaRuntime(
         // ★ 2026-11-02：激素也随时间回落（各自不同的半衰期）
         state = state.copy(hormones = hormoneEngine.advance(state.hormones, elapsed))
         // ★ 2026-11-02：生理 —— 不交互的那段时间它在休息，睡眠债在还
-        state = state.copy(physiology = PhysiologyEngine.advance(state.physiology, elapsed))
+        // ★ 2026-11-21：体质要参与 —— 甲减/贫血的人同样睡 8 小时恢复得少。
+        //   放在 `tick()` 里而不是调用点：这是"时间怎么过"，属于运行时职责。
+        state = state.copy(
+            physiology = PhysiologyEngine.advance(
+                state.physiology,
+                elapsed,
+                profile = state.health.derive(),
+            ),
+        )
         return state
     }
 
@@ -124,7 +132,15 @@ class PersonaRuntime(
         val hormoneEvent = event.toHormoneEvent()
         if (hormoneEvent != null) {
             state = state.copy(
-                hormones = hormoneEngine.step(state.hormones, hormoneEvent, 0, hourOfDay),
+                hormones = hormoneEngine.step(
+                    state.hormones,
+                    hormoneEvent,
+                    0,
+                    hourOfDay,
+                    // ★ 2026-11-21：压力敏感度也参与。体检里静息心率快 / 有焦虑史的人，
+                    //   同一句重话皮质醇顶得更高 —— 在此之前它只写在提示词里。
+                    stressMultiplier = state.health.derive().stressMultiplier,
+                ),
             )
         }
         return state

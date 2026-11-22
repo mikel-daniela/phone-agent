@@ -38,6 +38,11 @@ object OutputSanitizer {
     private val LATIN_KEEP = setOf(
         "ok", "okay", "wifi", "app", "id", "url", "qq", "cpu", "gps",
         "ai", "pdf", "excel", "word", "ppt", "pptx", "docx", "xlsx", "usb", "sms", "otp",
+        // ★ 2026-11-20：上一刀（10a117f）往测试的期望表里补了 zip，
+        //   白名单只补了 pptx/docx/xlsx，于是 `我们自己在工具文案里说过的技术词要原样留下`
+        //   一直是红的（没人注意到是因为它和另一件事的改动挤在同一个提交里）。
+        //   zip 是我们自己的文件工具会说的格式（打包、解压），该留。
+        "zip",
         // ══════════════════════════════════════════════════════════════
         //  ★ 2026-11-18 真机（应用分身）：`linux_exec` 被安全策略拒绝，
         //    模型如实转述三条原因，里面带着 Linux / Termux / root。

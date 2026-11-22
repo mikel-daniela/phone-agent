@@ -407,6 +407,14 @@ class HormoneEngine(
          * 便于测试与离线回放；线上由 `PersonaRuntime` 传真实时间。
          */
         hourOfDay: Double? = null,
+        /**
+         * 压力敏感度倍率（来自体检：静息心率快 / 有焦虑史 ⇒ 1.4）。
+         *
+         * ★ 2026-11-21：`stressSensitivity` 之前算出来没有任何消费点，
+         *   于是"这个人更容易被激到"只写在提示词里、不参与激素计算。
+         *   默认 1.0 ⇒ 既有调用点与测试一行不用改。
+         */
+        stressMultiplier: Double = 1.0,
     ): Hormones {
         val advanced = advance(state, elapsedMs)
         if (event == null) return advanced
@@ -438,10 +446,18 @@ class HormoneEngine(
             }
 
         // ★ 规则 9：昼夜反应性。只削"往上顶"的那部分，且只削一点点（夜间 ×0.85）。
-        val cortisolAdjusted = if (hourOfDay != null && cortisolBuffered > 0) {
-            (cortisolBuffered * HormoneKinetics.stressReactivity(hourOfDay)).roundToInt()
+        // ★ 规则 11：体质敏感度。同样一句重话，压力敏感的人皮质醇顶得更高。
+        //   ⚠️ 只作用于**往上顶**的方向（`> 0`）；走得快的那一半由半衰期管，
+        //      与体质无关 —— 否则"敏感"会变成"永远消不下去"，那是另一个病。
+        val scaled = if (cortisolBuffered > 0 && stressMultiplier != 1.0) {
+            (cortisolBuffered * stressMultiplier.coerceAtLeast(0.0)).roundToInt()
         } else {
             cortisolBuffered
+        }
+        val cortisolAdjusted = if (hourOfDay != null && scaled > 0) {
+            (scaled * HormoneKinetics.stressReactivity(hourOfDay)).roundToInt()
+        } else {
+            scaled
         }
 
         return make(

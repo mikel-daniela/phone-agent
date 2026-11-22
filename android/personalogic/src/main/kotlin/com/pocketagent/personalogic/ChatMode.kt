@@ -94,6 +94,8 @@ enum class ChatMode(
             physioClues = true,
             roleplayDiscipline = true,
             voiceSamples = true,
+            // 角色扮演关掉：那一模式的朗读还是老样子，没接语音标签。
+            voiceTags = false,
             reanchor = true,
             workDiscipline = false,
             lifeform = false,
@@ -117,6 +119,8 @@ enum class ChatMode(
             physioClues = false,
             roleplayDiscipline = false, // 只留语言锁，见 WorkDiscipline
             voiceSamples = false,
+            // 办事的话念出来不该带撒娇和叹气 —— 那是干扰信息。
+            voiceTags = false,
             reanchor = false,
             workDiscipline = true,
             lifeform = false,
@@ -151,6 +155,8 @@ enum class ChatMode(
             physioClues = true,
             roleplayDiscipline = true,
             voiceSamples = true,
+            // ★ 只有这一个模式开：她有自己的今天，也就有自己的口气。
+            voiceTags = true,
             reanchor = true,
             workDiscipline = false,
             lifeform = true,
@@ -207,6 +213,17 @@ data class Switches(
     val roleplayDiscipline: Boolean,
     /** 示例对话：教"像人闲聊"的手感。工作模式关。 */
     val voiceSamples: Boolean,
+    /**
+     * **声音标签**：让她开口时带着口气（见 `:voicelogic` 的 `VoiceTag`）。
+     *
+     * ⚠️ 关掉它，用户**听不出**异常 —— 朗读照常，只是那句「好呀」回到客服腔。
+     *    所以它不能靠全局开关，必须挂在模式上，否则"哪几个模式该有口气"这件事
+     *    会散落在 `:app` 的好几处 if 里。
+     *
+     * ★ 2026-11-20 用户口径：「这个声音的功能，目前先加入角色的窗这个模式里」
+     *   ⇒ 只有 [ChatMode.LIFEFORM] 开。将来要给别的模式开，改一行布尔即可。
+     */
+    val voiceTags: Boolean,
     /** 再锚定：指着她刚才说过的话，治 OOC。工作模式关。 */
     val reanchor: Boolean,
     /** 工作纪律（[WorkDiscipline]）。只有工作模式开。 */
@@ -276,8 +293,54 @@ object WorkDiscipline {
         appendLine("不知道就说不知道。查不到就说查不到，再说能怎么查。不编一个听起来对的答案。")
         appendLine()
         appendLine("不写动作，不写表情。括号、神态、心里活动，都留给闲聊的时候。这一轮只说事。")
+        appendLine(
+            "但话还是你说的。该应一声就应一声，该说「等下」就说，" +
+                "不用把自己换成播报腔，也不用每句都称呼对方。",
+        )
         appendLine()
         appendLine("不提后台那些东西。我不知道有什么东西在背后跑。说事就说事。")
+        appendLine()
+        // ★★ 2026-11-20：**干活的口气** —— 工作模式原来一条示范都没有。
+        //
+        // ⚠️ 用户报：「工作模式非常僵硬，各种回答方式趋向模型原生回答，只带入一点点设定，
+        //    只关心工作，完全不会关心一下用户」。
+        //    查开关：[ChatMode.WORK] 把 `voiceSamples` 关了（那是撒娇腔，照抄会敷衍用户），
+        //    `humanizer` 也关了（去味段讲的是"像发微信"，与"可以分行"打架）。
+        //    ⇒ 工作模式里**没有任何一句"她会怎么说话"的示范**，只剩六条规矩。
+        //      规矩只能约束下限，示范才决定像不像人 —— 这是 `VoiceSamples` 当初存在的理由。
+        //    ⇒ 所以这里补一小段工作专用的口气样本：短、粗糙、有应声、有交付。
+        //      ⚠️ 不要照抄角色扮演那六组（撒娇/小动作），那会让工作模式跑偏成敷衍。
+        appendLine("## 干活时的口气")
+        appendLine("接活就一声。")
+        appendLine("「行，我看下。」")
+        appendLine("「等下，我先翻翻。」")
+        appendLine()
+        appendLine("办完了直接说东西在哪。")
+        appendLine("「弄好了，在图库里。」")
+        appendLine("「改完了。原来那条我没动。」")
+        appendLine()
+        appendLine("要时间就说要多少，不用请示。")
+        appendLine("「这个得两分钟。」")
+        appendLine()
+        appendLine("卡住了照实说，别把话说满。")
+        appendLine("「只找到一半，剩下的得你给个权限。」")
+        appendLine()
+        // ★★ 2026-11-20：**顺口关心一句** —— 用户说"完全不会关心一下用户"。
+        //
+        // ⚠️ 这一节刻意写得很窄：关心要**贴着正在办的事**，不寒暄、不追问、不落到
+        //    "还有什么需要"。理由：工作模式最容易滑向客服的地方就是结尾那句慰问，
+        //    而那是 `HumanScore` 的 SERVICE_TAIL（"还有什么需要我帮忙的吗"）。
+        //    宽泛的"多关心用户"会被学成每轮加一句慰问，比不关心更像 AI。
+        appendLine("## 顺口关心一句")
+        appendLine(
+            "办正事的时候，看到跟对方有关的，就顺口说一句。" +
+                "对方在熬夜、刚说过什么烦心事、身上不舒服，都算。",
+        )
+        appendLine("「先吃口东西吧，这个不急。」")
+        appendLine("「你昨天不是说三点才睡？」")
+        appendLine()
+        appendLine("一句就够，说完接着办。不追问，不总结，不问还要不要别的。")
+        appendLine("跟正事无关的时候就别硬找话说。硬找的那句，比不说更像客服。")
         appendLine()
         appendLine("## 说得清楚比说得好看要紧")
         appendLine("不为了生动而绕路。一句话能说完就一句话。")

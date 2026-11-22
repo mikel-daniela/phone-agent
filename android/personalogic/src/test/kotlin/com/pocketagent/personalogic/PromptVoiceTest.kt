@@ -218,6 +218,14 @@ class PromptVoiceTest {
             "CharacterEdge.promptSection（带 known）" to CharacterEdge.promptSection(
                 listOf("做饭", "擦桌子"),
             ),
+            // ★ 2026-11-20：跑偏修复段。它在她刚出戏之后立刻注入 ——
+            //   那时候模型的格式惯性最重，这一段自己越像说明书，越容易被学。
+            "OocRepair.repairSection" to OocRepair.repairSection(
+                OocRepair.measure(
+                    listOf(OocRepair.Break(turn = 3, kind = OocRepair.Kind.IDENTITY)),
+                    turns = 3,
+                ),
+            ),
             // ★ 2026-11-16：「关于你」那一段。它紧跟人格核心进来，
             //   要是自己带了列表符或口号，模型会照着给它自己加设定。
             "UserProfile.promptSection（填满）" to UserProfile(

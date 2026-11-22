@@ -79,7 +79,8 @@ class PersonaAssembler(
         layers[PromptLayer.L1_CORE] = renderCore(input.card, effectiveTone)
         layers[PromptLayer.L2_FINGERPRINT] = input.card.fingerprint.render()
         input.state?.let {
-            layers[PromptLayer.L3_STATE] = renderState(it, input.performance, input.presence)
+            layers[PromptLayer.L3_STATE] =
+                renderState(it, input.performance, input.presence, input.moments)
         }
         val memories = selectMemories(input.memories, input.memoryLimit)
         if (memories.isNotEmpty()) {
@@ -207,6 +208,23 @@ class PersonaAssembler(
     }
 
     /**
+     * 只渲染 L3 状态段 —— 给**自定义角色**用。
+     *
+     * ⚠️ 为什么需要它：`assistantSystemPrompt` 里自定义角色那一支**整条替换**了装配器
+     *    （用户写的人设优先），代价是 L3 一起没了 —— 于是自定义角色永远不知道自己
+     *    累不累、在不在生理期、体检报告里贫血。用户 2026-11-21 的原话是
+     *    「必须验证身体设定会不会真的影响行为」，而自定义角色是默认用法。
+     *
+     * 这里只借出**状态那一段**，不动人设：人设由用户写，状态由代码算。
+     */
+    fun stateSection(
+        state: PersonaState,
+        performance: Performance? = null,
+        presence: Boolean = false,
+        moments: List<String> = emptyList(),
+    ): String = renderState(state, performance, presence, moments)
+
+    /**
      * L3：状态调制。**必须可解释** —— 无由头就不渲染（设计稿 §4.2）。
      *
      * ★ 2026-11-14：多了 [Performance]（后台 AI 写的表演指导）。
@@ -218,6 +236,7 @@ class PersonaAssembler(
         state: PersonaState,
         performance: Performance? = null,
         presence: Boolean = false,
+        moments: List<String> = emptyList(),
     ): String {
         // ⚠️ 只在**仍然有效**时注入。时间基准用 `lastActiveAtMs`：
         //    它由每一次 `currentState()` 推进，语义就是"现在"。
@@ -262,7 +281,13 @@ class PersonaAssembler(
         //    只在这里叠加 —— 否则"睡一觉"会把事件的影响也抹掉。
         val hour = localHourOf(state.physiology.lastActiveAtMs)
         // ★ 2026-11-02：生理周期也修正精力（经期头两天最明显）
-        val cycleMoment = state.cycle.momentAt(state.physiology.lastActiveAtMs)
+        // ⚠️ 2026-11-21：**周期由体检报告决定，不用 `state.cycle` 的默认值**。
+        //   此前 `state.cycle` 一直是 `Cycle()`（enabled = true、28/5），
+        //   于是一个男性角色、或者体检报告里根本没填女性专项的角色，
+        //   提示词照样会写「你这两天在生理期」—— 那是凭空捏造身体事实。
+        //   `Cycle.derivedFrom` 只认 `HealthReport.female` 在不在。
+        val cycle = Cycle.derivedFrom(state.health)
+        val cycleMoment = cycle.momentAt(state.physiology.lastActiveAtMs)
         // ★ 2026-11-02：**体检报告在这里变成行为**
         //   贫血 ⇒ 更累、恢复慢；夜猫子 ⇒ 节律后移；心率快 ⇒ 更怕压力
         val body = state.health.derive()
@@ -271,7 +296,18 @@ class PersonaAssembler(
                 PhysiologyEngine.energyModifier(state.physiology, hour, body) +
                 CycleEngine.energyModifier(cycleMoment)
             ).coerceIn(0, 100)
-        if (state.isNeutral() && guide == null && presenceLine == null) return ""
+        // ★ 2026-11-21：体质那段必须在**早退之前**算出来。
+        //   ⚠️ 这里修的是一个真缺陷：一个贫血、很怕疼的人，只要心情与精力恰好
+        //      都在中位（`isNeutral()` 为真），整段 L3 就会被下面那句早退吃掉 ——
+        //      用户填了一整套体检报告，角色一个字都看不到。身体不是"状态"，
+        //      它不会因为心情平静就消失。
+        val bodyText = runCatching { bodySection(state.health) }.getOrNull()
+        val momentText = moments.map { it.trim() }.filter { it.isNotEmpty() }
+        if (state.isNeutral() && guide == null && presenceLine == null &&
+            bodyText == null && momentText.isEmpty()
+        ) {
+            return ""
+        }
         // ⚠️ 2026-11-14 修：原来是一串 `append()` 直接拼，两条同时命中时
         //    会拼成「心情不错精神很好」（没有顿号）。前台模型读这种句子
         //    会把它当成一个词，语气跟着变形。用"、"连接，单条时不变。
@@ -281,7 +317,11 @@ class PersonaAssembler(
             if (energy <= 35) add("有点累")
             if (energy >= 70 && state.mood >= 50) add("精神很好")
         }.joinToString("、")
-        if (parts.isBlank() && guide == null && presenceLine == null) return ""
+        if (parts.isBlank() && guide == null && presenceLine == null &&
+            bodyText == null && momentText.isEmpty()
+        ) {
+            return ""
+        }
         // ★ 2026-11-02：激素里最突出的那一条，可以"说出来"。
         //   ⚠️ `dominant()` 的文案里**不含任何索取**（有测试钉着）——
         //      状态可以被表达，但不能拿来要挟用户（§4.6）。
@@ -332,6 +372,14 @@ class PersonaAssembler(
                 if (isNotEmpty()) append("\n\n")
                 append(presenceLine)
             }
+            // ★ 2026-11-21：周围的小事。**不是状态** ——
+            //   它说的是"这会儿外面怎样"，所以不写进上面那句"你现在…"。
+            //   ⚠️ 最多两句（`MomentSlot.MAX_LINES`），导演那边也截了。
+            if (momentText.isNotEmpty()) {
+                if (isNotEmpty()) append("\n\n")
+                append("## 这会儿周围\n")
+                append(momentText.joinToString("\n"))
+            }
             // ★ 生理那一段单独成段 —— 它说的是"身体怎样"，不是"心情怎样"
             if (physiological != null) {
                 if (isNotEmpty()) append("\n\n")
@@ -343,7 +391,7 @@ class PersonaAssembler(
                 append(it)
             }
             // ★ 体质那一段：标红的化验项 + 报告覆盖不到的身体细节
-            bodySection(state.health)?.let {
+            bodyText?.let {
                 if (isNotEmpty()) append("\n\n")
                 append(it)
             }
@@ -364,6 +412,11 @@ class PersonaAssembler(
     private fun bodySection(health: HealthReport): String? {
         val abnormal = health.abnormalNote()
         val beyond = health.beyond
+        // ★ 2026-11-21：**推导出来的体质也要说话**。
+        //   在此之前 `coldSensitivity` / `painTolerance` / `intimacyNeed` 只有
+        //   `derive()` 算出、没有任何消费点 —— 用户填了、界面也存了，
+        //   角色却完全不知道。这是"算好了没接线"。
+        val profile = health.derive()
 
         val details = buildList {
             if (beyond.temperaturePreference != TemperaturePreference.NORMAL) {
@@ -388,6 +441,20 @@ class PersonaAssembler(
             if (beyond.scentNote.isNotBlank()) add("身上：${beyond.scentNote}")
             if (beyond.voiceNote.isNotBlank()) add("声音：${beyond.voiceNote}")
             if (beyond.hungerNote.isNotBlank()) add("空腹的时候：${beyond.hungerNote}")
+            // ── 推导体质（体检/生活方式算出来的，不是用户直接填的那几栏）──
+            if (profile.coldSensitivity == ColdSensitivity.HIGH &&
+                beyond.temperaturePreference != TemperaturePreference.COLD_BLOODED
+            ) {
+                add("你比常人更怕冷（血压偏低或血红蛋白偏低），空调房里会想加件外套。")
+            }
+            when {
+                profile.painTolerance <= 30 -> add("你很怕疼。磕一下会真的皱眉，不会硬撑。")
+                profile.painTolerance >= 70 -> add("你耐疼。小伤小痛不太当回事，但真疼起来不会喊。")
+            }
+            when {
+                profile.intimacyNeed >= 70 -> add("你需要被碰到才安心 —— 靠一下、牵着手，比说话有用。")
+                profile.intimacyNeed <= 30 -> add("你不太习惯被碰，会先僵一下再放松。这不是拒绝。")
+            }
         }
 
         if (abnormal.isBlank() && details.isEmpty()) return null
@@ -626,6 +693,14 @@ data class AssemblyInput(
      *    替她编"我正在吃饭"就是给一个不存在的人安作息。
      */
     val presence: Boolean = false,
+    /**
+     * 这一轮**周围的小事**（导演写的 `smallMoments`，见 [MomentSlot]）。
+     *
+     * ★ 2026-11-21：在此之前 `DirectorOutput.smallMoments` 一路算到最后
+     *   **没有任何消费方** —— 导演写了"窗外在下雨"，前台模型一个字看不到。
+     *   默认空 = 老调用点行为不变。
+     */
+    val moments: List<String> = emptyList(),
 ) {
     companion object {
         /** 默认系统提示词预算。约等于 1200 个汉字的空间。 */

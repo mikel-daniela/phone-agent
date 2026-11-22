@@ -197,6 +197,31 @@ class HumanScoreTest {
         assertEquals(HumanScore.Code.ALIGNMENT, r.worst?.code)
     }
 
+    // ── 缺口 1：外部判定的跑偏要能计分 ──────────────────────────
+
+    @Test
+    fun `被判跑出角色的那一轮直接算崩了`() {
+        // 这句话本身措辞完全干净 —— 只看字面它该是满分。
+        val r = HumanScore.of("这个我真帮不了。", frameBroken = true)
+        assertEquals(HumanScore.Code.FRAME_BREAK, r.worst?.code)
+        assertEquals(HumanScore.Verdict.BROKEN, r.verdict)
+        assertTrue("必须掉到及格线以下：${r.total}", r.total < HumanScore.BROKEN_AT)
+    }
+
+    @Test
+    fun `没被判跑偏的时候不加这一项`() {
+        val clean = HumanScore.of("这个我真帮不了。")
+        assertEquals(HumanScore.Verdict.CLEAN, clean.verdict)
+        assertTrue(clean.signals.none { it.code == HumanScore.Code.FRAME_BREAK })
+    }
+
+    @Test
+    fun `跑偏的证据里不回显原话`() {
+        val r = HumanScore.of("作为一个 AI 我不能说。", frameBroken = true)
+        val evidence = r.signals.first { it.code == HumanScore.Code.FRAME_BREAK }.evidence
+        assertFalse(evidence.contains("作为一个"))
+    }
+
     @Test
     fun `日志里不回显原文`() {
         // ⚠️ logLine 会进 Timber → logcat，而 logcat 谁都能读。
