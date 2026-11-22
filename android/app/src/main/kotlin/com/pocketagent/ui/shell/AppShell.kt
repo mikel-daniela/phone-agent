@@ -320,6 +320,40 @@ fun AppShell(
         }.getOrElse { emptyList() }
     }
 
+    // ══════════════════════════════════════════════════════════════
+    //  ★ 2026-11-22：`@` 面板的候选池
+    // ══════════════════════════════════════════════════════════════
+    //
+    // ⚠️ 为什么在**外壳**这一层取，而不是在 TasksScreen 里：
+    //    取的能力（工具清单）和记忆（原子库）都在 `AppContainer` 上，
+    //    而 `TasksScreen` 刻意不依赖容器（预览与离线测试要能跑）。
+    //
+    // ⚠️ `toolsForCurrentMode()` 与 `memoryAtoms()` 都是**同步**的
+    //    （前者读常量表 + 档位，后者读内存缓存），
+    //    但仍放进 `LaunchedEffect` —— 首次 `memoryAtoms()` 会读盘。
+    var mentionRefresh by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var mentionItemsState by remember {
+        androidx.compose.runtime.mutableStateOf(
+            emptyList<com.pocketagent.agentui.MentionIndex.Item>(),
+        )
+    }
+    androidx.compose.runtime.LaunchedEffect(mentionRefresh, modelRefresh) {
+        mentionItemsState = runCatching {
+            val tools = container.toolsForCurrentMode()
+            val titles = runCatching {
+                com.pocketagent.agentlogic.orchestration.ToolCatalog()
+                    .all.associate { it.id to it.title }
+            }.getOrElse { emptyMap() }
+            val atoms = runCatching { container.memoryAtoms() }.getOrElse { emptyList() }
+            com.pocketagent.agentui.MentionPool.capabilities(
+                names = tools.map { it.name },
+                titles = titles,
+            ) + com.pocketagent.agentui.MentionPool.memories(
+                entries = atoms.sortedByDescending { it.at }.map { it.id to it.text },
+            )
+        }.getOrElse { emptyList() }
+    }
+
     // ⚠️ 任务状态持有者提升到**外壳**这一层，而不是留在 TasksScreen 里。
     //    原因见 TasksScreen 的 viewModel 参数注释：它不继承 ViewModel，
     //    生命周期等于承载它的那次组合，而 destination 会在切 tab 时被移出组合。
@@ -860,6 +894,7 @@ fun AppShell(
                         //   他会以为没生效。
                         modelModels = modelModelsState,
                         modelChoice = modelChoiceState,
+                        mentionItems = mentionItemsState,
                         thinkingEffort = effortState,
                         onPickModel = { id ->
                             container.setModelChoice(
@@ -1001,6 +1036,7 @@ fun AppShell(
                         onOpenPersona = { navController.navigate(Routes.PERSONA) },
                         modelModels = modelModelsState,
                         modelChoice = modelChoiceState,
+                        mentionItems = mentionItemsState,
                         thinkingEffort = effortState,
                         onPickModel = { id ->
                             container.setModelChoice(
@@ -1130,6 +1166,7 @@ fun AppShell(
                         onOpenPersona = { navController.navigate(Routes.PERSONA) },
                         modelModels = modelModelsState,
                         modelChoice = modelChoiceState,
+                        mentionItems = mentionItemsState,
                         thinkingEffort = effortState,
                         onPickModel = { id ->
                             container.setModelChoice(

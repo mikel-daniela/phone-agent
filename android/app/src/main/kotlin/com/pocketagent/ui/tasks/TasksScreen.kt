@@ -146,6 +146,17 @@ fun TasksScreen(
     onPickEffort: (com.pocketagent.modelrouter.ThinkingEffort) -> Unit = {},
 
     /**
+     * `@` 面板的候选池。
+     *
+     * ★ 2026-11-22 接的线：`MentionIndex`（分组排序，155 行纯逻辑）从
+     *   2026-11-06 就写好了，但**生产代码零调用** —— 用户敲 `@` 什么都不会发生。
+     *
+     * ⚠️ 池子由调用方（`AppShell`）从容器里取，这里不碰 `AppContainer`：
+     *    与 `modelModels` 同一条纪律（本类不给预览和离线测试引入 Android 依赖）。
+     */
+    mentionItems: List<com.pocketagent.agentui.MentionIndex.Item> = emptyList(),
+
+    /**
      * ★★ 2026-11-04 晚：**这一页是什么页**。
      *
      * 第一版把「角色扮演 / 工作」做成聊天页输入框上方的两段切换，
@@ -938,6 +949,33 @@ fun TasksScreen(
                             text = thinkingEffort.label,
                             style = PaType.label,
                             color = PaColor.TextSecondary,
+                        )
+                    }
+                }
+
+                // ── @ 面板 ────────────────────────────────
+                //
+                // ★ 触发判定在 `MentionTrigger`（纯函数，有测试）：
+                //   末尾那个 `@` 后面还没打空格 = 正在提及。
+                //   点了空格面板就收 —— "已经结束的提及"不该一直挂着。
+                val activeMention = com.pocketagent.agentui.MentionTrigger.active(vm.draft)
+                if (activeMention != null && mentionItems.isNotEmpty()) {
+                    val grouped = com.pocketagent.agentui.MentionIndex.grouped(
+                        query = activeMention.query,
+                        items = mentionItems,
+                    )
+                    if (grouped.isNotEmpty()) {
+                        MentionPanel(
+                            grouped = grouped,
+                            onPick = { picked ->
+                                vm.onDraftChange(
+                                    com.pocketagent.agentui.MentionTrigger.replace(
+                                        text = vm.draft,
+                                        active = activeMention,
+                                        label = picked.label,
+                                    ),
+                                )
+                            },
                         )
                     }
                 }
