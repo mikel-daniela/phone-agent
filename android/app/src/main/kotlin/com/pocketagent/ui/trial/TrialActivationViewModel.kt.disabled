@@ -1,0 +1,141 @@
+package com.pocketagent.ui.trial
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.pocketagent.trialaccess.TrialRedeemResult
+import com.pocketagent.trialaccess.TrialStatus
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+/**
+ * 内测激活页的界面状态。
+ *
+ * ⚠️ 这里只放"看得见的东西"。判定（验签/一次性/有效期/白名单）**一件都不在这里**——
+ * 全在 `:trialaccess`，那一层能离线测。这个类只负责把结果搬上屏幕，
+ * 以及在失败时**别把用户刚粘的码清掉**（清了等于让他再找一遍）。
+ */
+data class TrialUiState(
+    val code: String = "",
+    val busy: Boolean = false,
+    /** 首次读取状态还没回来 —— 早一帧画"未激活"会让已激活的用户心里一沉 */
+    val loading: Boolean = true,
+    val status: TrialStatus? = null,
+    val error: String? = null,
+    val notice: String? = null,
+    val confirmingCancel: Boolean = false,
+) {
+    /** 输入框能不能按。加载中 / 正在激活都不行 */
+    val canSubmit: Boolean
+        get() = !busy && !loading && code.isNotBlank() && status !is TrialStatus.Active
+}
+
+/**
+ * 激活码 → 内置 Key 的界面逻辑。
+ *
+ * ★ 依赖是三个挂起函数，不是 AppContainer：这样"码错了 / 已用过 / 激活成功"
+ *   三条路径不需要真机 Keystore 也能测（真机上没法造一个"签名合法但已过期"的码）。
+ */
+class TrialActivationViewModel(
+    private val readStatus: suspend () -> TrialStatus,
+    private val redeem: suspend (String) -> TrialRedeemResult,
+    private val resetTrial: suspend () -> Unit,
+    private val clock: () -> Long = System::currentTimeMillis,
+) : ViewModel() {
+
+    private val _state = MutableStateFlow(TrialUiState())
+    val state = _state.asStateFlow()
+
+    init {
+        refresh()
+    }
+
+    fun refresh() {
+        viewModelScope.launch {
+            val status = runCatching { readStatus() }.getOrNull()
+            _state.update { it.copy(loading = false, status = status) }
+        }
+    }
+
+    /**
+     * 输入变化。
+     *
+     * ⚠️ 不在这里做"合法性过滤"（比如把非法字符删掉）：
+     *    用户从微信里粘过来的码常带前后空格和换行，**静默删掉**会让他觉得
+     *    "我明明粘对了"。归一化在 [`com.pocketagent.trialaccess.ActivationCodec.normalize`]
+     *    里做，那里认大小写、认 O/0、认缺一段前缀，出错也有具体提示。
+     *    这里只做一件事：限长，别让输入框被一整段聊天记录撑爆。
+     */
+    fun onCodeChange(raw: String) {
+        _state.update {
+            it.copy(code = raw.take(MAX_CODE_INPUT), error = null, notice = null)
+        }
+    }
+
+    fun submit() {
+        val snapshot = _state.value
+        if (!snapshot.canSubmit) return
+        val raw = snapshot.code.trim()
+        if (raw.isEmpty()) return
+
+        viewModelScope.launch {
+            _state.update { it.copy(busy = true, error = null, notice = null) }
+            val result = runCatching { redeem(raw) }.getOrElse { error ->
+                // 控制器自己会兜住大部分异常；漏到这里的是编程错误，
+                // 但用户看到的不该是异常栈 —— 给他一句能做点什么的话。
+                _state.update {
+                    it.copy(busy = false, error = "激活没能完成（${error.javaClass.simpleName}）。请重试一次。")
+                }
+                return@launch
+            }
+            when (result) {
+                is TrialRedeemResult.Activated -> _state.update {
+                    it.copy(
+                        busy = false,
+                        // ★ 成功才清空：失败时留着码，用户改一位就能重试
+                        code = "",
+                        error = null,
+                        loading = false,
+                        status = TrialStatus.Active(result.state, result.state.remainingMillisAt(clock())),
+                        notice = "激活成功。现在可以直接聊天了 —— 不用填 Key。",
+                    )
+                }
+
+                is TrialRedeemResult.Rejected -> _state.update {
+                    it.copy(busy = false, error = result.message)
+                }
+            }
+        }
+    }
+
+    fun requestCancel() = _state.update { it.copy(confirmingCancel = true) }
+
+    fun dismissCancel() = _state.update { it.copy(confirmingCancel = false) }
+
+    /** 撤销本机激活。不消耗新码，但**当前这个码也不会复活** */
+    fun confirmCancel() {
+        viewModelScope.launch {
+            _state.update { it.copy(busy = true, confirmingCancel = false, error = null) }
+            val outcome = runCatching { resetTrial() }
+            _state.update {
+                it.copy(
+                    busy = false,
+                    error = outcome.exceptionOrNull()?.let { e -> "撤销失败（${e.javaClass.simpleName}）" },
+                    notice = if (outcome.isSuccess) "已撤销。要用内测需要重新找我们要一个码。" else null,
+                )
+            }
+            refresh()
+        }
+    }
+
+    companion object {
+        /**
+         * 输入框上限。
+         *
+         * 一个标准码是 38 个字符（`PA-` + 4 组 8 位）。留到 64 是为了容下
+         * 前后空格、误粘的第二行 —— 而不是为了容下两个码。
+         */
+        const val MAX_CODE_INPUT = 64
+    }
+}

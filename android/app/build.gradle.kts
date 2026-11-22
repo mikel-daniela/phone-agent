@@ -150,8 +150,19 @@ dependencies {
     implementation(project(":provider:api"))          // LlmProvider 契约与 ProviderCredential
     implementation(project(":provider:openai-compat"))// 11 家内置服务商（都走 OpenAI 兼容协议）
     implementation(project(":provider:tts-openai"))   // 语音合成（OpenAI /audio/speech 协议）
+    // 语音逻辑（纯 Kotlin）：会话状态机 / 打断 / 延迟预算 / VAD 判定，以及
+    // **声音标签**（词表 / 解析 / 按能力降级渲染 / 提示词 / 模型规则）。
+    //
+    // ⚠️ 为什么必须显式声明：`:personalogic` 不认识声音标签（那是另一层），
+    //    而本模块要把 `VoiceTagPrompt` 拼进提示词、用 `VoiceTagParser` 剥标签 ——
+    //    少这一行 Gradle 报 "Cannot access 'VoiceTagPrompt'..."（同 :personalogic 那个坑）。
+    implementation(project(":voicelogic"))            // 声音标签 / 会话状态机 / 延迟预算
     implementation(project(":keymgmt"))               // API Key 的存储 / 校验 / 取用
     implementation(project(":modelrouter"))           // 模型配置仓储契约 + 难度路由 + 配置体检
+    // 内测激活（临时模块 · 2026-11-21）：激活码验签 / 一次性 / 白名单 / 内置 Key。
+    // ⚠️ 拔除时删这一行 + 模块目录 + settings.gradle.kts 的 include；
+    //    完整接线点清单见 docs/工程/内测激活模块-2026-11-21.md。
+    // implementation(project(":trialaccess"))  // 临时摘除，见 settings.gradle.kts
     implementation(project(":core:network"))          // 日志脱敏（网关错误信息出站前的最后一道）
     implementation(project(":provider:gateway"))      // loopback 网关：dsh 的模型出口
 
