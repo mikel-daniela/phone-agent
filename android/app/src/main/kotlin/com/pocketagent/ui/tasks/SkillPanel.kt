@@ -46,6 +46,7 @@ internal fun SkillPanel(
     skills: List<Skill>,
     onPick: (Skill) -> Unit,
     modifier: Modifier = Modifier,
+    onImport: (() -> Unit)? = null,
 ) {
     if (skills.isEmpty()) return
     val shape = RoundedCornerShape(PaRadius.m)
@@ -72,6 +73,20 @@ internal fun SkillPanel(
             items(skills, key = { it.id }) { skill ->
                 SkillRow(skill = skill, onClick = { onPick(skill) })
             }
+        }
+        // ★ 导入入口放在**用技能的地方**，而不是只放设置里。
+        //   真机反馈：用户在设置里翻不到「工作技能」，但一定会打 `/`。
+        if (onImport != null) {
+            Text(
+                text = "＋ 导入自己的 .md",
+                style = PaType.caption,
+                color = PaColor.AccentText,
+                maxLines = 1,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onImport)
+                    .padding(horizontal = PaSpace.s, vertical = PaSpace.xs),
+            )
         }
     }
 }

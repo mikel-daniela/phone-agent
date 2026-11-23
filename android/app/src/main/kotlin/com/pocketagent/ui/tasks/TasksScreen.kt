@@ -162,6 +162,8 @@ fun TasksScreen(
      *   本类不碰容器 —— 与 `mentionItems` 同一条纪律。
      */
     skills: List<com.pocketagent.skilllogic.Skill> = emptyList(),
+    /** 技能导入页的入口；只在工作台传，聊天/在场页没有 `/` 面板也就不需要它。 */
+    onOpenSkills: (() -> Unit)? = null,
 
     /**
      * ★★ 2026-11-04 晚：**这一页是什么页**。
@@ -1005,6 +1007,7 @@ fun TasksScreen(
                     if (candidates.isNotEmpty()) {
                         SkillPanel(
                             skills = candidates,
+                            onImport = onOpenSkills,
                             onPick = { picked ->
                                 vm.onDraftChange(
                                     com.pocketagent.skilllogic.SlashTrigger.replace(

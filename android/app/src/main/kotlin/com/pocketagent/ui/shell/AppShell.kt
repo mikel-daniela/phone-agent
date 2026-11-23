@@ -1062,6 +1062,7 @@ fun AppShell(
                         mentionItems = mentionItemsState,
                         // 只有工作台带技能：聊天/在场模式不该出现 `/` 面板。
                         skills = skillsState,
+                        onOpenSkills = { navController.navigate(Routes.SKILLS) },
                         thinkingEffort = effortState,
                         onPickModel = { id ->
                             container.setModelChoice(
@@ -1383,6 +1384,7 @@ fun AppShell(
         onInstallRootfs = { settingsScope.launch { container.installRootfs() } },
         onOpenBackgroundAi = { navController.navigate(Routes.BACKGROUND_AI) },
         onOpenSkills = { navController.navigate(Routes.SKILLS) },
+        skillCount = skillsState.size,
         lifeformWeb = lifeformWebOn,
         onToggleLifeformWeb = { lifeformWebOn = it; container.setLifeformWebOn(it) },
         lifeformProactive = lifeformProactiveOn,

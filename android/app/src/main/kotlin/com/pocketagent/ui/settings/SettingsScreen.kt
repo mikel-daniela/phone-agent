@@ -158,6 +158,8 @@ fun SettingsScreen(
     onOpenBackgroundAi: (() -> Unit)? = null,
     /** 工作技能：清单 / 导入 / 删除（2026-11-23）。 */
     onOpenSkills: (() -> Unit)? = null,
+    /** 内置技能条数；写死数字会像上次那样过期（8 → 12 时副标题没跟着改）。 */
+    skillCount: Int = 0,
     /** 世界书面板。为 null 时不显示入口。 */
     onOpenWorldBook: (() -> Unit)? = null,
     /** 身体的输入面板。 */
@@ -450,7 +452,11 @@ fun SettingsScreen(
                         PaListRow(
                             icon = Icons.Default.Psychology,
                             title = "工作技能",
-                            subtitle = "内置 8 条做法，也能导入自己的 .md；工作台打 / 直接挑",
+                            subtitle = if (skillCount > 0) {
+                            "内置 $skillCount 条做法与速查，也能导入自己的 .md；工作台打 / 直接挑"
+                        } else {
+                            "内置做法与速查，也能导入自己的 .md；工作台打 / 直接挑"
+                        },
                             onClick = onOpenSkills,
                         )
                     }
