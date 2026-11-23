@@ -294,6 +294,35 @@ class ChatModeTest {
     }
 
     @Test
+    fun `工作模式明确压住客套腔`() {
+        // ★ 2026-11-23 用户报「只知道顾着工作，说话非常客套，有距离感」。
+        //   工作模式关了 humanizer 与 voiceSamples，模型的原生客服腔没有东西压着，
+        //   所以这一段必须常驻。
+        assertTrue("缺了客套那一节", section.contains("## 客套话在这里是噪音"))
+        assertTrue("要有接活的一句话", section.contains("「行，我来。」"))
+        assertTrue("要有交付的一句话", section.contains("「弄好了，在下载里。」"))
+        assertTrue("缺东西要能直接要", section.contains("「还差个权限，你给一下。」"))
+        assertTrue("说完要停", section.contains("说完就停"))
+        assertTrue("对对方不用敬语", section.contains("不用敬语"))
+    }
+
+    @Test
+    fun `工作模式允许她表露一点自己的态度`() {
+        assertTrue(section.contains("## 你自己也有态度"))
+        assertTrue("要限一句，不然会盖过交付", section.contains("一句就够"))
+        assertTrue("态度要像人不像工具", section.contains("不像工具"))
+    }
+
+    @Test
+    fun `工作纪律里没有敬语与客套词的原文`() {
+        // ⚠️ 反向钉子：这段本身要是出现「您」「希望对您」，等于把客服腔
+        //   原样写进提示词 —— 模型会照着学。
+        for (word in listOf("您", "希望能帮到", "请随时", "感谢您的")) {
+            assertFalse("工作纪律里出现了「$word」", section.contains(word))
+        }
+    }
+
+    @Test
     fun `工作纪律自己也不像说明书`() {
         // ★ 与 `PromptVoiceTest` 的存量体检互为补强：那里按九项判据扫，
         //   这里只钉"这一节不能有列表符/加粗/破折号"三条最刺眼的。
