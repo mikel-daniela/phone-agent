@@ -118,15 +118,6 @@ KNOWN_FAKE = {
     # 教科书 JWT（jwt.io 首页那个示例载荷 sub=1234567890）
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0"
     ".dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk",
-
-    # ── 内测激活模块的测试夹具 ────────────────────────────────────
-    # TrialKeyVault / TrialAccessController 要验证「把 Key 装进凭据库再取出来」，
-    # 拿的必须是**看起来像 Key** 的串；内容写成 sk-trial- + 递增数字/字母表。
-    "sk-trial-0123456789abcdefghij",
-    "sk-trial-xyz-0123456789abcdef",
-    # tools/trial/issue_codes.py 自检时用的：验证「发出来的码能被自己的验签器认」，
-    # 与真 Key 无关（它根本不联网）。
-    "sk-selftest-0123456789abcdef",
 }
 
 # ═══════════════════════════════════════════════════════════════
