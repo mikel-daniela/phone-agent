@@ -303,6 +303,17 @@ private fun TurnBubbles(
             //   那些是高频操作，回弹会让人烦。
             enter = fadeIn(PaMotion.standard()) + expandVertically(PaMotion.settled()),
         ) {
+            // ═══════════════════════════════════════════════════════
+            //  ★★ 2026-11-23：**这里必须是一个 Column**
+            // ═══════════════════════════════════════════════════════
+            //
+            // ⚠️ `AnimatedVisibility` 的 content 是**叠放**语义（像 Box，全部子项
+            //    都摆在原点）。此前这里并排放了「正文 Row」与「文件卡片
+            //    FilesRowBelow」，于是那一排文件卡直接压在回复正文上 ——
+            //    用户原话：「角色的回复附带生成的相关文件，会遮挡到角色回复的内容」。
+            //
+            // ★ 修法是把两个子项装进一个 Column，把它们从"叠"变成"排"。
+            Column(modifier = Modifier.fillMaxWidth()) {
             Row(modifier = Modifier.fillMaxWidth().padding(top = PaSpace.xs)) {
                 // ══════════════════════════════════════════════════
                 //  ★★ 2026-11-01：**AI 的回复可以选中复制**
@@ -339,6 +350,7 @@ private fun TurnBubbles(
             }
             // ★ 2026-11-20：文件卡片在正文**下面**（"这轮做出来的东西"，属附注）
             com.pocketagent.ui.tasks.FilesRowBelow(replyText = reply, visible = showReply)
+            }
         }
 
         // ── 失败时的补充说明（只在没有正文时兜底）────────────
