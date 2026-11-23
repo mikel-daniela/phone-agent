@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PocketAgent 特性</title>
+<style>
+  :root{
+    --paper:#F7F3EA; --ink:#1F1B18; --muted:#6B625C; --accent:#C96442;
+    --accent-soft:#E8D5CC; --line:#DED5C8; --card:#FFFDF8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:1080px;background:var(--paper)}
+  body{font-family:"Microsoft YaHei","PingFang SC",sans-serif;color:var(--ink);position:relative}
+  .grain{position:absolute;inset:0;background-image:radial-gradient(circle at 1px 1px, rgba(31,27,24,.05) 1px, transparent 0);background-size:14px 14px}
+  .band{position:absolute;left:0;top:0;bottom:0;width:14px;background:var(--accent)}
+  .head{position:absolute;left:76px;right:64px;top:66px}
+  .kicker{font-size:15px;letter-spacing:.22em;color:var(--accent);font-weight:700}
+  h1{margin-top:14px;font-size:52px;line-height:1.16;letter-spacing:-.01em;font-weight:800}
+  h1 small{display:block;margin-top:12px;font-size:22px;font-weight:400;color:var(--muted);letter-spacing:0}
+  .grid{position:absolute;left:76px;right:64px;top:296px;display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  .card{
+    background:var(--card);border:1px solid var(--line);border-radius:16px;
+    padding:26px 26px 24px;min-height:252px;position:relative;
+    box-shadow:0 16px 34px -30px rgba(31,27,24,.5);
+  }
+  .num{
+    font-family:Georgia,serif;font-size:15px;color:var(--accent);
+    letter-spacing:.08em;font-variant-numeric:tabular-nums;
+  }
+  .card h2{margin-top:10px;font-size:27px;line-height:1.25;letter-spacing:-.01em}
+  .card p{margin-top:12px;font-size:16.5px;line-height:1.62;color:var(--muted)}
+  .card p b{color:var(--ink);font-weight:600}
+  .spark{position:absolute;right:24px;top:24px;width:56px;height:56px;opacity:.9}
+  .foot{position:absolute;left:76px;right:64px;bottom:52px;display:flex;justify-content:space-between;align-items:flex-end;
+        border-top:1px solid var(--line);padding-top:18px}
+  .foot .l{font-size:16px;color:var(--muted)}
+  .foot .r{font-size:15px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .foot .r b{color:var(--ink);font-size:22px}
+</style>
+</head>
+<body>
+  <div class="band"></div><div class="grain"></div>
+
+  <div class="head">
+    <div class="kicker">0.1.0-m2 · 第一个公开测试版</div>
+    <h1>人格不在提示词里，在能算的代码里
+      <small>每一件都会真的影响她下一句怎么回 —— 不是文案，是状态。</small>
+    </h1>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <svg class="spark" viewBox="0 0 56 56"><path d="M6 40 C18 40 22 14 30 14 S44 34 50 28" fill="none" stroke="#C96442" stroke-width="2.5" stroke-linecap="round"/></svg>
+      <div class="num">01</div>
+      <h2>她会累，也会烦</h2>
+      <p>多巴胺、血清素、催产素、皮质醇四条曲线按小时回落。<b>被夸、被冷落、隔很久才见面</b>，走的是不同的路。</p>
+    </div>
+    <div class="card">
+      <svg class="spark" viewBox="0 0 56 56"><circle cx="28" cy="28" r="16" fill="none" stroke="#C96442" stroke-width="2.5"/><path d="M28 16 v12 l8 6" fill="none" stroke="#C96442" stroke-width="2.5" stroke-linecap="round"/></svg>
+      <div class="num">02</div>
+      <h2>作息是她的，不是设定的</h2>
+      <p>夜里聊天会攒睡眠债，第二天精力真会低。久坐、生理期、体检里的异常项，都会改她当下的状态。</p>
+    </div>
+    <div class="card">
+      <svg class="spark" viewBox="0 0 56 56"><path d="M10 26 h36 M10 26 a18 10 0 0 0 36 0" fill="none" stroke="#C96442" stroke-width="2.5"/><path d="M22 40 h12" stroke="#C96442" stroke-width="2.5" stroke-linecap="round"/></svg>
+      <div class="num">03</div>
+      <h2>记忆会淡，不会消失</h2>
+      <p>按<b>情绪强度</b>衰减：吵架那句记得久，随口一句天气很快模糊。模糊时她说"好像提过"，不会假装没听见。</p>
+    </div>
+    <div class="card">
+      <svg class="spark" viewBox="0 0 56 56"><rect x="9" y="12" width="38" height="32" rx="4" fill="none" stroke="#C96442" stroke-width="2.5"/><path d="M9 22 h38 M20 22 v22" stroke="#C96442" stroke-width="2.5"/></svg>
+      <div class="num">04</div>
+      <h2>世界书靠类型防崩</h2>
+      <p>设定只能你写（<b>SETTING</b>），她只能提事实（<b>FACT</b>）且要你点头。她提的事永远盖不掉你写的设定。</p>
+    </div>
+    <div class="card">
+      <svg class="spark" viewBox="0 0 56 56"><path d="M14 16 h28 v18 h-16 l-8 8 v-8 h-4 z" fill="none" stroke="#C96442" stroke-width="2.5" stroke-linejoin="round"/></svg>
+      <div class="num">05</div>
+      <h2>三种模式，一份人格</h2>
+      <p>角色扮演 / 工作台 / 在场，只切<b>允许她做什么</b>，不换人。工作模式压掉客服腔，也能边干边聊。</p>
+    </div>
+    <div class="card">
+      <svg class="spark" viewBox="0 0 56 56"><path d="M12 42 V22 M24 42 V14 M36 42 V28 M48 42 V18" stroke="#C96442" stroke-width="3" stroke-linecap="round"/></svg>
+      <div class="num">06</div>
+      <h2>工具日志看得懂</h2>
+      <p>调工具时一行一行滚：工具名、参数、成功 / 失败 / 被拦<b>颜色不同</b>。失败那一步是能看见的，不用猜。</p>
+    </div>
+  </div>
+
+  <div class="foot">
+    <div class="l">内置 12 条工作技能，每条都标了出处 · 生成的 PPT 有封面、章节页与页码</div>
+    <div class="r">BYOK · 无服务端 · GPL-3.0　<b>v0.1.0-m2</b></div>
+  </div>
+  <div style="height:1200px"></div>
+</body>
+</html>

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PocketAgent 三种模式</title>
+<style>
+  :root{
+    --paper:#F7F3EA; --ink:#1F1B18; --muted:#6B625C; --accent:#C96442;
+    --accent-soft:#E8D5CC; --line:#DED5C8; --card:#FFFDF8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:1080px;background:var(--paper)}
+  body{font-family:"Microsoft YaHei","PingFang SC",sans-serif;color:var(--ink)}
+  .page{width:1080px;height:760px;position:relative;overflow:hidden}
+  .grain{position:absolute;inset:0;background-image:radial-gradient(circle at 1px 1px, rgba(31,27,24,.05) 1px, transparent 0);background-size:14px 14px}
+  .kicker{position:absolute;left:76px;top:56px;font-size:15px;letter-spacing:.22em;color:var(--accent);font-weight:700}
+  h1{position:absolute;left:76px;top:86px;right:64px;font-size:44px;line-height:1.2;letter-spacing:-.01em;font-weight:800}
+  h1 em{font-style:normal;color:var(--accent)}
+  .cols{position:absolute;left:76px;right:64px;top:206px;display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  .col{
+    background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px 22px 20px;
+    box-shadow:0 16px 34px -30px rgba(31,27,24,.5);
+  }
+  .col .cap{font-size:12.5px;letter-spacing:.18em;color:var(--muted)}
+  .col h2{margin-top:8px;font-size:25px;letter-spacing:-.01em}
+  .col p{margin-top:10px;font-size:15px;line-height:1.6;color:var(--muted);min-height:72px}
+  .col .row{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line);font-size:13.5px;color:var(--muted)}
+  .col .row b{color:var(--ink);font-weight:600}
+  .stem{position:absolute;left:76px;right:64px;top:452px;height:26px}
+  .stem .bar{position:absolute;left:0;right:0;top:12px;height:1px;background:var(--line)}
+  .stem .dot{position:absolute;top:6px;width:13px;height:13px;border-radius:50%;background:var(--accent)}
+  .base{
+    position:absolute;left:76px;right:64px;top:490px;
+    border:1px solid var(--accent);border-radius:16px;background:linear-gradient(180deg,#FFFDF8,#F6EDE7);
+    padding:20px 24px;display:flex;align-items:center;justify-content:space-between;
+  }
+  .base .t{font-size:22px;font-weight:700}
+  .base .t small{display:block;margin-top:6px;font-size:14.5px;font-weight:400;color:var(--muted)}
+  .chips{display:flex;gap:8px}
+  .chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 13px;font-size:13.5px;color:var(--muted)}
+  .foot{position:absolute;left:76px;right:64px;bottom:34px;font-size:13.5px;color:var(--muted);display:flex;justify-content:space-between}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="grain"></div>
+  <div class="kicker">三种模式 · 只切权限</div>
+  <h1>不是三套人格，是<em>同一份人格</em>在三件事上</h1>
+
+  <div class="cols">
+    <div class="col">
+      <div class="cap">ROLEPLAY</div>
+      <h2>角色扮演</h2>
+      <p>整段人格全开：情绪、语气、记忆、身体状态都在场。她说的话像在过日子，而不是在答问。</p>
+      <div class="row">能做什么：<b>聊天、记人、演</b></div>
+    </div>
+    <div class="col">
+      <div class="cap">WORK</div>
+      <h2>工作台</h2>
+      <p>压掉戏与客服腔，留下判断力和手上的活。能调工具、出文件；也可以边干边聊两句生活。</p>
+      <div class="row">能做什么：<b>跑工具、出稿、排期</b></div>
+    </div>
+    <div class="col">
+      <div class="cap">LIFEFORM</div>
+      <h2>在场</h2>
+      <p>你不说话的时候，她也有自己的时间：看两页网上的东西，想起一件事，再决定要不要发条消息。</p>
+      <div class="row">能做什么：<b>自己待着、偶尔先开口</b></div>
+    </div>
+  </div>
+
+  <div class="stem">
+    <div class="bar"></div>
+    <div class="dot" style="left:14%"></div>
+    <div class="dot" style="left:49%"></div>
+    <div class="dot" style="left:84%"></div>
+  </div>
+
+  <div class="base">
+    <div class="t">同一份人格状态
+      <small>激素 / 作息 / 生理期 / 体检报告 / 记忆衰减 —— 换模式不清空，也不复制一份。</small>
+    </div>
+    <div class="chips">
+      <div class="chip">共用记忆</div>
+      <div class="chip">共用语气</div>
+      <div class="chip">共用世界书</div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <div>模型只是驱动，人格长在 app 里</div>
+    <div>PocketAgent · 0.1.0-m2</div>
+  </div>
+</div>
+</body>
+</html>
