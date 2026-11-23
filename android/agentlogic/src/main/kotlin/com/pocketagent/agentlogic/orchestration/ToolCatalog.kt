@@ -475,6 +475,17 @@ object BuiltinTools {
             failureHint = "托管起不来多半是这个应用不允许被复制进程；换回真屏操作并提前告知用户",
         ),
         ToolSpec(
+            id = "use_skill",
+            title = "取技能做法",
+            channel = ToolChannel.IN_PROCESS,
+            effects = setOf(ToolEffect.READ_ONLY),
+            idempotent = true,
+            expectedMs = 10,
+            timeoutMs = 5_000,
+            whenToUse = "技能清单里有对口的那一条时，先取它的具体做法再动手",
+            failureHint = "取不到说明名字抄错了；按通用习惯做，不要自己编规则",
+        ),
+        ToolSpec(
             id = "persona_brief",
             title = "人格摘要",
             channel = ToolChannel.IN_PROCESS,

@@ -107,6 +107,27 @@ LIBRARY_JARS = [
     f"com/squareup/okio/okio-jvm/{OKIO_VERSION}/okio-jvm-{OKIO_VERSION}.jar",
     f"junit/junit/{JUNIT_VERSION}/junit-{JUNIT_VERSION}.jar",
     "org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar",
+    # ★★ 2026-11-23：Truth 与它的一条依赖链**进了**离线通道。
+    #
+    # ⚠️ 这条决定推翻了原来的政策（见上面 `COMPILE_ONLY_MODULES` 的注释：
+    #    "为几条断言引入 guava 不值"）。政策没错，但前提变了：
+    #    `:agentui` 与 `:skilllogic` 两个模块的测试现在一共 70+ 条用 Truth
+    #    （`ToolTrace` 的拆行、`SkillMatch` 的评分、`SlashTrigger` 的解析），
+    #    而这些恰好是"错了不报错、只是界面显示错 / 技能选错"的一类逻辑 ——
+    #    最需要离线覆盖。把它们踢出离线通道等于让两个模块只有 Gradle 一条腿。
+    #
+    # ⚠️ 版本必须与 `android/gradle/libs.versions.toml` 的 `truth` 对齐，
+    #    否则 Gradle 绿、离线红（或者反过来）会被当成真实缺陷排查半天。
+    # ⚠️ Truth 1.4.4 的传递依赖（缺任何一个都是 `NoClassDefFoundError`
+    #    或 `unresolved reference`，且报错指向测试文件而不是这里）：
+    #    guava / failureaccess / checker-qual / error_prone_annotations /
+    #    j2objc-annotations。
+    "com/google/truth/truth/1.4.4/truth-1.4.4.jar",
+    "com/google/guava/guava/33.3.1-jre/guava-33.3.1-jre.jar",
+    "com/google/guava/failureaccess/1.0.2/failureaccess-1.0.2.jar",
+    "org/checkerframework/checker-qual/3.43.0/checker-qual-3.43.0.jar",
+    "com/google/errorprone/error_prone_annotations/2.30.0/error_prone_annotations-2.30.0.jar",
+    "com/google/j2objc/j2objc-annotations/3.0.0/j2objc-annotations-3.0.0.jar",
 ]
 
 # 只编译、**不跑测试**的模块。
@@ -278,6 +299,16 @@ MODULES = [
     #   · 导出带本地化文案     → 回放与当初不一致，于是"复盘"变成了编故事
     #   没有一条抛异常，没有一条在真机上"一眼看出来"。
     "android/agentui",
+    # 工作技能库（2026-11-23）：技能文档解析 / 内置工作技能 / 自然语言命中 /
+    # 斜杠触发 / 提示词段落拼装。
+    #
+    # ★ 这一层判错的后果**全是「不报错，只是不好用」**：
+    #   · 命中判据写松了   → 每句话都触发出一个技能，提示词天天膨胀，模型开始跑题
+    #   · 命中判据写紧了   → 用户说「做个 ppt」而技能没进去，产出仍是那份没审美的稿
+    #   · front matter 容错过头 → 导入一份坏技能文件，整库被一条脏数据带崩
+    #   · 段落超预算不裁剪 → 技能正文挤掉人格与记忆（顺序错一层，人设就没了）
+    #   没有一条抛异常，没有一条在真机上「一眼看出来」。
+    "android/skilllogic",
     # MCP 能力桥：协议核心 / loopback 服务器 / screen_read 判定与序列化 / dsh 配置渲染。
     #
     # ★ 判错的后果全是静默的：协议分支漏一个 → dsh 侧"工具消失"；关卡顺序颠倒 →

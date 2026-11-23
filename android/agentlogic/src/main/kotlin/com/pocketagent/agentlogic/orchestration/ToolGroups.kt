@@ -71,6 +71,9 @@ object ToolGrouping {
         "screen_read" to ToolGroup.BASE,
         "screen_shot" to ToolGroup.BASE,
         "persona_brief" to ToolGroup.BASE,
+        // ★ 2026-11-23：技能清单与取用都放基础组 —— 模型每一轮都该看得见
+        //   有哪些做法可用；藏进某个组里等于让它永远想不起来还有技能这回事。
+        "use_skill" to ToolGroup.BASE,
         "context_offload" to ToolGroup.BASE,
         "context_recall" to ToolGroup.BASE,
         // 界面

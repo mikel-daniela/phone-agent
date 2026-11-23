@@ -166,6 +166,14 @@ object Routes {
     const val BACKGROUND_AI = "background-ai"
 
     /**
+     * **工作技能**（2026-11-23）：看清单、导入 `.md`、删掉导入的。
+     *
+     * ★ 与工作台打 `/` 看到的是同一份数据（`AppContainer.allSkills()`）。
+     *   分两处是刻意的：`/` 是**用的时候**顺手挑，设置页是**装的时候**管理。
+     */
+    const val SKILLS = "skills"
+
+    /**
      * **内测激活**（临时模块，2026-11-21）。
      *
      * ★ 它存在的理由只有一个：7 天后的内测里，用户不该被要求先去申请一个 Key。
@@ -352,6 +360,21 @@ fun AppShell(
                 entries = atoms.sortedByDescending { it.at }.map { it.id to it.text },
             )
         }.getOrElse { emptyList() }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  ★ 2026-11-23：工作技能（`/` 面板的候选）
+    // ══════════════════════════════════════════════════════════════
+    //
+    // 与 `mentionItemsState` 同一套做法：容器持有真相，外壳缓存一份给组合用。
+    // `container.skillsRevision` 是 `mutableStateOf`，导入/删除后自动重读。
+    var skillsState by remember {
+        androidx.compose.runtime.mutableStateOf(
+            emptyList<com.pocketagent.skilllogic.Skill>(),
+        )
+    }
+    androidx.compose.runtime.LaunchedEffect(container.skillsRevision) {
+        skillsState = runCatching { container.allSkills() }.getOrElse { emptyList() }
     }
 
     // ⚠️ 任务状态持有者提升到**外壳**这一层，而不是留在 TasksScreen 里。
@@ -1037,6 +1060,8 @@ fun AppShell(
                         modelModels = modelModelsState,
                         modelChoice = modelChoiceState,
                         mentionItems = mentionItemsState,
+                        // 只有工作台带技能：聊天/在场模式不该出现 `/` 面板。
+                        skills = skillsState,
                         thinkingEffort = effortState,
                         onPickModel = { id ->
                             container.setModelChoice(
@@ -1357,6 +1382,7 @@ fun AppShell(
         rootfsState = container.rootfsState,
         onInstallRootfs = { settingsScope.launch { container.installRootfs() } },
         onOpenBackgroundAi = { navController.navigate(Routes.BACKGROUND_AI) },
+        onOpenSkills = { navController.navigate(Routes.SKILLS) },
         lifeformWeb = lifeformWebOn,
         onToggleLifeformWeb = { lifeformWebOn = it; container.setLifeformWebOn(it) },
         lifeformProactive = lifeformProactiveOn,
@@ -1895,6 +1921,24 @@ fun AppShell(
                         onEnvoyEffort = { envoyEffort = it; container.setEnvoyEffort(it) },
                         onPickMemoryModel = { memoryModel = it; container.setMemoryModel(it) },
                         onMemoryEffort = { memoryEffort = it; container.setMemoryEffort(it) },
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+
+                composable(Routes.SKILLS) {
+                    // 技能表由 `container.skillsRevision` 驱动：导入/删除后它 +1，
+                    // 外壳的 `skillsState` 重读，这里拿到的就是新表。
+                    com.pocketagent.ui.settings.SkillsScreen(
+                        skills = skillsState,
+                        import = { text, origin ->
+                            when (val r = container.importSkill(text, origin)) {
+                                is com.pocketagent.skilllogic.SkillDoc.Result.Ok ->
+                                    "已导入「${r.skill.name}」。" +
+                                        "工作台打 / 就能看到它，也可以直接说要做的事。"
+                                is com.pocketagent.skilllogic.SkillDoc.Result.Bad -> r.reason
+                            }
+                        },
+                        remove = { id -> container.removeImportedSkill(id) },
                         onBack = { navController.popBackStack() },
                     )
                 }

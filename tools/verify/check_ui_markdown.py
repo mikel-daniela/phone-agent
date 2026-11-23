@@ -129,6 +129,19 @@ MODEL_FACING = {
     #    （「## 这一次的权限」），模型读 markdown；界面上的那两处用的
     #    是枚举里的 `label`/`blurb`，跟这里无关。
     "agentlogic/orchestration/AgentPermission.kt",
+    # ── 工作技能（2026-11-23 加）────────────────────────────────
+    # ⚠️ 技能的正文与清单**整段进提示词**（`SkillPrompt.listSection` /
+    #    `activeSection`，以及 `SkillTool` 取回来的正文）。那里面的
+    #    `**粗体**` 是写给模型看的强调，不是界面文案 ——
+    #    界面上显示技能的是 `SkillPanel` / `SkillsScreen`，它们只读
+    #    `skill.name` / `skill.summary`，不渲染正文。
+    "skilllogic/BuiltinSkills.kt",
+    "skilllogic/SkillPrompt.kt",
+    # ⚠️ `Skill` / `SkillDoc` 的字符串是**校验失败时的原因**，
+    #    其中一部分会原样回给模型（`SkillTool` 的「没有叫 X 的技能」），
+    #    也有一部分显示给用户（导入页）—— 两边都不含 markdown，但把它们
+    #    列在这里可以避免将来往正文里写强调时被误报。
+    "skilllogic/Skill.kt",
 }
 
 

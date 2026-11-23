@@ -156,6 +156,8 @@ fun SettingsScreen(
     onToggleLifeformProactive: ((Boolean) -> Unit)? = null,
     /** 后台 AI 的调度页。为 null 时不显示入口。 */
     onOpenBackgroundAi: (() -> Unit)? = null,
+    /** 工作技能：清单 / 导入 / 删除（2026-11-23）。 */
+    onOpenSkills: (() -> Unit)? = null,
     /** 世界书面板。为 null 时不显示入口。 */
     onOpenWorldBook: (() -> Unit)? = null,
     /** 身体的输入面板。 */
@@ -439,6 +441,19 @@ fun SettingsScreen(
                         subtitle = "场记与记忆抽取用哪个模型、思考多深",
                         onClick = onOpenBackgroundAi,
                     )
+
+                    // ── 工作技能（2026-11-23）──────────────────────
+                    // ★ 与「后台 AI」分开：那一页管的是**谁在后台干活**，
+                    //   这一页管的是**干活时按什么做法**（工作模式的 / 清单）。
+                    if (onOpenSkills != null) {
+                        PaListDivider()
+                        PaListRow(
+                            icon = Icons.Default.Psychology,
+                            title = "工作技能",
+                            subtitle = "内置 8 条做法，也能导入自己的 .md；工作台打 / 直接挑",
+                            onClick = onOpenSkills,
+                        )
+                    }
 
                     // ══════════════════════════════════════════════
                     //  ★★ 2026-11-15：**在场模式**的两个开关

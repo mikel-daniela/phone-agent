@@ -155,6 +155,13 @@ fun TasksScreen(
      *    与 `modelModels` 同一条纪律（本类不给预览和离线测试引入 Android 依赖）。
      */
     mentionItems: List<com.pocketagent.agentui.MentionIndex.Item> = emptyList(),
+    /**
+     * 工作技能。**空表 = 不显示 `/` 面板**（聊天页与在场页都传空）。
+     *
+     * ★ 为什么由外面传：技能库在 `AppContainer` 里（内置 + 用户导入），
+     *   本类不碰容器 —— 与 `mentionItems` 同一条纪律。
+     */
+    skills: List<com.pocketagent.skilllogic.Skill> = emptyList(),
 
     /**
      * ★★ 2026-11-04 晚：**这一页是什么页**。
@@ -980,6 +987,37 @@ fun TasksScreen(
                     }
                 }
 
+                // ★ `/` 挑技能：与 `@` 互不干扰（`@` 要在 `@` 后没空格，
+                //   `/` 要在 `/` 后没空格，同一个输入框里不可能同时满足）。
+                val activeSkill = com.pocketagent.skilllogic.SlashTrigger.active(vm.draft)
+                if (activeSkill != null && skills.isNotEmpty()) {
+                    val q = activeSkill.query.trim()
+                    val candidates = if (q.isEmpty()) {
+                        skills
+                    } else {
+                        skills.filter { skill ->
+                            skill.name.contains(q, ignoreCase = true) ||
+                                skill.id.contains(q, ignoreCase = true) ||
+                                skill.triggers.any { it.contains(q, ignoreCase = true) } ||
+                                skill.summary.contains(q, ignoreCase = true)
+                        }
+                    }
+                    if (candidates.isNotEmpty()) {
+                        SkillPanel(
+                            skills = candidates,
+                            onPick = { picked ->
+                                vm.onDraftChange(
+                                    com.pocketagent.skilllogic.SlashTrigger.replace(
+                                        text = vm.draft,
+                                        active = activeSkill,
+                                        name = picked.name,
+                                    ),
+                                )
+                            },
+                        )
+                    }
+                }
+
                 TaskComposer(
                     value = vm.draft,
                     onValueChange = vm::onDraftChange,
@@ -1344,29 +1382,18 @@ internal fun TaskCard(
                         text = perceptionTierLabel(task.perceptionTier),
                         tone = if (task.perceptionTier == 0) PaBadgeTone.Success else PaBadgeTone.Neutral,
                     )
-                    Spacer(Modifier.width(PaSpace.xs))
-                    AnimatedContent(
-                        targetState = task.note,
-                        transitionSpec = {
-                            fadeIn(PaMotion.standard()) togetherWith fadeOut(PaMotion.fast())
-                        },
-                        label = "taskNote",
-                    ) { note ->
-                        Text(
-                            text = note,
-                            style = PaType.caption,
-                            color = PaColor.TextSecondary,
-                        )
-                    }
+                    Spacer(Modifier.weight(1f))
+
+                    // ★★ 2026-11-23：中止按钮挪到这一行 —— 下面那块
+                    //   工具日志会一直长高，按钮再排在它后面就会随
+                    //   步数一路往下掉，跑到屏幕外。
+                    PaButton(
+                        text = "中止",
+                        onClick = onAbort,
+                        style = PaButtonStyle.Text,
+                    )
                 }
 
-                Spacer(Modifier.height(PaSpace.s))
-
-                PaButton(
-                    text = "中止",
-                    onClick = onAbort,
-                    style = PaButtonStyle.Text,
-                )
             }
         }
 
@@ -1422,49 +1449,29 @@ internal fun TaskCard(
         }
 
         // ══════════════════════════════════════════════════════════
-        //  ★★ 2026-10-31：**步骤记录** —— 用 `PaCardStack`（叠卡展开）
+        //  ★★ 2026-11-23：**它干了什么** —— 换成工具日志，不再用叠卡
         // ══════════════════════════════════════════════════════════
         //
-        // `PaCardStack` + `:agentui/CardStack`（含 `STACK_VISIBLE=3`、
-        // `EXPAND_LIMIT=8`、以及"两张卡不该叠"的判断）在 `7d0357d`
-        // 就建好了，但**零调用方** —— 因为项目里**没有"一堆同类卡片"
-        // 的数据源**。
+        // 以前这副担子交给 `PaCardStack`：把每一步画成一张同款卡片叠起来。
+        // 但卡片语言表达的是"这里有 N 个**同等级**的东西"，而工具调用
+        // 是一条**时间线** —— 前一步的输出是后一步的输入，而且其中某一步
+        // 失败（可重试）或被安全策略拦下（不许重试），那一步才是用户
+        // 真正要看的。三张同色卡片把这条区别压平了。
         //
-        // ⇒ 现在有了：agent 循环的 trace。真实任务常常 5~10 步，
-        //   一步步平铺会把回答顶到屏幕外；叠起来只露 3 张，
-        //   点一下展开到 8 张。
+        // ⇒ 照 agent 类工具（Claude Code / Codex CLI）的通用做法：
+        //   一条竖线导轨 + 一行一个动作，工具名等宽（它是个标识符），
+        //   状态用字形/圆点区分，摘要里直接写「N 成功 / M 失败」。
+        //   实现在 `ToolLog.kt`，拆字符串的纯逻辑在 `:agentui/ToolTrace`。
         //
-        // ⚠️ 少于 3 步**不叠**（`CardStack.shouldStack` 已判）：
-        //    两张卡做成叠卡，用户要多点一次才能看到第二张 —— 那是倒退。
-        if (task.trace.isNotEmpty()) {
-            var traceExpanded by androidx.compose.runtime.remember(task.id) {
-                androidx.compose.runtime.mutableStateOf(false)
-            }
-            com.pocketagent.ui.design.PaCardStack(
-                count = task.trace.size,
-                expanded = traceExpanded,
-                onToggle = { traceExpanded = !traceExpanded },
-                modifier = Modifier.padding(top = PaSpace.s),
-                collapsedContent = {
-                    Text(
-                        text = "它做了 ${task.trace.size} 步操作",
-                        style = PaType.label,
-                        color = PaColor.TextSecondary,
-                    )
-                },
-                expandedContent = {
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        task.trace.forEach { line ->
-                            Text(
-                                text = "· ${line}",
-                                style = PaType.caption,
-                                color = PaColor.TextTertiary,
-                            )
-                        }
-                    }
-                },
-            )
-        }
+        // ⚠️ 运行中也用它：那时 `trace` 还是空的，`runningLine` 由循环的
+        //   `onStep` 直给（见 `TasksScreen` 里 `update(taskId)` 那段把
+        //   `note` 设成当前这一步）。
+        AgentActionLog(
+            trace = task.trace,
+            running = task.state == TaskState.Running,
+            runningLine = if (task.state == TaskState.Running) task.note else "",
+            modifier = Modifier.padding(top = PaSpace.s),
+        )
 
         // ══════════════════════════════════════════════════════════
         //  ★★ 2026-10-31：**「让我来做」** —— 给保守判定一个出口

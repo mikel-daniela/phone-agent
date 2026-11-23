@@ -1,5 +1,7 @@
 package com.pocketagent.data
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.flow.collect
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -73,6 +75,8 @@ import com.pocketagent.mcp.ScreenReadTool
 import com.pocketagent.mcp.McpTool
 import com.pocketagent.personalogic.CustomPersona
 import com.pocketagent.personalogic.UserProfile
+import com.pocketagent.skilllogic.Skill
+import com.pocketagent.skilllogic.SkillDoc
 import com.pocketagent.rootlogic.DeviceState
 import com.pocketagent.rootlogic.PrivilegeMode
 import com.pocketagent.rootlogic.RootActions
@@ -1000,6 +1004,14 @@ class AppContainer(context: Context) {
     private val userProfileStore: UserProfileStore by lazy { UserProfileStore(appContext) }
 
     /**
+     * **用户导入的工作技能**的存储。
+     *
+     * ⚠️ 与内置技能分开存的理由见 `SkillStore` 的 KDoc：内置的是代码，
+     *    存一份到磁盘就会出现"旧正文盖住新的"。
+     */
+    private val skillStore: SkillStore by lazy { SkillStore(appContext) }
+
+    /**
      * 当前生效的用户档案。null = 用户还没填过（提示词里一个字都不加）。
      *
      * ★ 为什么它能明显改善"刚认识时的干瘪"：app 里角色的人格、身体、
@@ -1226,6 +1238,104 @@ class AppContainer(context: Context) {
         userProfileStore.clear()
         activeUserProfile = null
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  工作技能（用户导入的那一份；内置的在 `BuiltinSkills.all`）
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * 已导入的技能缓存。
+     *
+     * ★ 为什么缓存：拼提示词是**每轮**都要做的事，而 DataStore 是磁盘 IO。
+     *   导入/删除时更新它（见 [importSkill] / [removeImportedSkill]），
+     *   启动时读一次（见 [loadSkills]）。
+     */
+    @Volatile
+    private var importedSkills: List<Skill> = emptyList()
+
+    /** 导入/删除要串行 —— 两条并发写会互相覆盖（整份 JSON 是一次写）。 */
+    private val skillMutex = kotlinx.coroutines.sync.Mutex()
+
+    /**
+     * 技能表的版本号。导入/删除后 +1。
+     *
+     * ★ 为什么要有它：外壳（`AppShell`）在组合里缓存了一份技能表给 `/` 面板用，
+     *   而导入发生在**另一个页面**（设置 → 工作技能）。没有这个信号，
+     *   用户导完回到工作台打 `/`，看到的还是旧清单 —— 而界面上没有任何提示。
+     *
+     * ⚠️ 必须是 `mutableStateOf`：普通 `@Volatile var` 改值不会触发重组
+     *   （这个坑本项目踩过四次）。
+     */
+    var skillsRevision by androidx.compose.runtime.mutableStateOf(0)
+        private set
+
+    /** 启动时读一次。读失败就当没有导入过，不影响内置技能。 */
+    suspend fun loadSkills() {
+        importedSkills = runCatching { skillStore.load() }.getOrDefault(emptyList())
+        skillsRevision++
+        Timber.i(
+            "工作技能：内置 %d 条 + 导入 %d 条",
+            com.pocketagent.skilllogic.BuiltinSkills.all.size,
+            importedSkills.size,
+        )
+    }
+
+    /**
+     * 这一轮能用到的全部技能：内置在前、导入在后。
+     *
+     * ⚠️ 导入的如果与内置同 id，**内置优先**并丢弃导入的那条 ——
+     *    否则用户导入一份叫 `deck` 的技能就能悄悄改掉"做演示文稿"，
+     *    而他下次看到的清单文案会与内置说明对不上。
+     */
+    fun allSkills(): List<Skill> {
+        val builtinIds = com.pocketagent.skilllogic.BuiltinSkills.all.map { it.id }.toSet()
+        return com.pocketagent.skilllogic.BuiltinSkills.all +
+            importedSkills.filterNot { it.id in builtinIds }
+    }
+
+    /** 导入一份 `SKILL.md` 原文。返回解析结果 —— 失败时把原因显示给用户。 */
+    suspend fun importSkill(text: String, origin: String): SkillDoc.Result {
+        val parsed = SkillDoc.parse(text, origin)
+        if (parsed is SkillDoc.Result.Ok) {
+            skillMutex.withLock {
+                val builtinIds = com.pocketagent.skilllogic.BuiltinSkills.all.map { it.id }.toSet()
+                if (parsed.skill.id in builtinIds) {
+                    return SkillDoc.Result.Bad(
+                        "技能 id「${parsed.skill.id}」与内置技能重名了。" +
+                            "把 front matter 里的 name 改一下（比如加个后缀）再导入。",
+                    )
+                }
+                // 同一个 id 再导一次 = 覆盖，不是新增两条。
+                val next = importedSkills.filterNot { it.id == parsed.skill.id } + parsed.skill
+                skillStore.save(next)
+                importedSkills = next
+            }
+            skillsRevision++
+            Timber.i("技能已导入：%s（%d 字）", parsed.skill.name, parsed.skill.body.length)
+        }
+        return parsed
+    }
+
+    /** 删掉一条导入的技能。内置的删不掉（返回 false）。 */
+    suspend fun removeImportedSkill(id: String): Boolean {
+        var removed = false
+        skillMutex.withLock {
+            val next = importedSkills.filterNot { it.id == id }
+            if (next.size != importedSkills.size) {
+                skillStore.save(next)
+                importedSkills = next
+                skillsRevision++
+                removed = true
+            }
+        }
+        return removed
+    }
+
+    /** 按 id 取（工具 `skill_read` 用）。 */
+    fun skillById(id: String): Skill? = allSkills().firstOrNull { it.id == id }
+
+    /** 只读快照，给设置页展示。 */
+    fun importedSkillList(): List<Skill> = importedSkills
 
     // ═══════════════════════════════════════════════════════════════
     //  明暗主题
@@ -6568,6 +6678,11 @@ class AppContainer(context: Context) {
             // ⚠️ 与上面两个工具共用同一个 rateLimiter：批量一次性占 N 份额度，
             //    否则"12 步的批"能把每分钟总动作数顶到上限的三倍。
             BatchTool(reader, safetyPort, dispatchPort, rateLimiter),
+            // ── 工作技能（只读）────────────────────────────────
+            // ★ 清单在提示词里常驻，正文按需取 —— 见 SkillTool 的 KDoc。
+            //   `allSkills()` 是同步的（内置 + 内存里的导入表），lambda
+            //   保证导入新技能后立刻可见（快照会漏掉）。
+            com.pocketagent.assistant.SkillTool { allSkills() },
             // ── DL：人格摘要（只读）──────────────────────────────
             // ★ 它是 `:personalogic` 的**第一个消费方**：在此之前
             //   DL-1…DL-4 的 5000+ 行、1852 条测试没有任何模块引用，
@@ -7073,6 +7188,7 @@ class AppContainer(context: Context) {
             //   ⚠️ 也独立于后面那条 `?: return@launch` —— 理由同上：
             //      "没有插件源配置"不该让用户档案永远读不到。
             runCatching { loadUserProfile() }
+            runCatching { loadSkills() }
                 .onFailure { Timber.e(it, "用户档案加载失败") }
             runCatching { loadThemeMode() }
                 .onFailure { Timber.e(it, "主题偏好加载失败") }

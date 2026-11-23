@@ -538,10 +538,46 @@ class ContainerChatPort(private val container: AppContainer) : ChatPort {
         )
     }
 
+    // ═══════════════════════════════════════════════════════════
+    //  工作技能
+    // ═══════════════════════════════════════════════════════════
+    //
+    // ★ 只在工作模式生效：聊天/在场模式里塞一份"PPT 该怎么做"的规则，
+    //   只会让角色开始汇报工作。
+    //
+    // 两条入口，优先级明确：
+    //   ① 用户打了 `/技能名` —— 点名，一定生效
+    //   ② 没点名时从原话里判断（`SkillMatch.confident`）—— 判不准就不加
+    //
+    // ⚠️ 技能段放在人格提示词**之后**、压缩记忆**之前**：
+    //   它是"这一轮临时加的做法"，比长期记忆更容易被裁掉，也更该被裁掉。
+    val skillSection = if (chatMode.isWork) {
+        val all = container.allSkills()
+        val picked = com.pocketagent.skilllogic.SlashTrigger.resolve(userText, all)?.skill
+        val matched = if (picked == null) {
+            com.pocketagent.skilllogic.SkillMatch.confident(userText, all)?.skill
+        } else {
+            null
+        }
+        if (picked != null || matched != null) {
+            Timber.i(
+                "工作技能：%s（%s）",
+                (picked ?: matched)?.name,
+                if (picked != null) "用户点名" else "从原话判断",
+            )
+        }
+        com.pocketagent.skilllogic.SkillPrompt.sectionFor(all, picked, matched)
+    } else {
+        ""
+    }
+
     // ★ 压缩记忆：会话级的，接在人格提示词**后面**。
     //   不放进 `assistantSystemPrompt` 的理由见接口参数的注释。
-    val systemWithMemory =
-        if (compressedMemory.isBlank()) system else system + "\n\n" + compressedMemory
+    val systemWithMemory = buildString {
+        append(system)
+        if (skillSection.isNotBlank()) append("\n\n").append(skillSection)
+        if (compressedMemory.isNotBlank()) append("\n\n").append(compressedMemory)
+    }
 
     // ── ④ 在受控作用域内跑 ───────────────────────────────────
     //

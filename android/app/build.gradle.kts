@@ -250,6 +250,7 @@ dependencies {
     // ★ 它是本项目**第一个把"看得见/停得下/说得清"画出来的模块**：
     //   在此之前 ":agentui" 的卡片只是数据结构，没有任何界面消费它们。
     implementation(project(":agentui"))
+    implementation(project(":skilllogic"))           // 工作技能：内置技能库 + 导入解析 + 命中评分
     implementation(project(":provider:anthropic"))   // Anthropic Messages 协议（Claude 直连）
     // implementation(project(":provider:gemini"))
     // implementation(project(":provider:local"))
