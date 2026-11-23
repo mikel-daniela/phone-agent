@@ -10,6 +10,9 @@ device; the model only produces language. Bring your own API key, no backend.
 ![platform](https://img.shields.io/badge/platform-Android%2010%2B-green)
 ![server](https://img.shields.io/badge/server-none-lightgrey)
 
+**[下载 / Download: `PocketAgent-0.1.0-m2.apk`](apk/PocketAgent-0.1.0-m2.apk)** —— 62.8 MB，签名指纹见
+[`apk/SHA256SUMS.txt`](apk/SHA256SUMS.txt)。装之前不用填任何账号，第一次打开在「设置 → API Key」填自己的 Key。
+
 ---
 
 ## English
@@ -26,7 +29,7 @@ character has its own day and may message you first). Chat histories are separat
   cortisol) with hourly decay, circadian energy curve, optional menstrual cycle, structured health
   report, willingness level that can decline a request, and a world book that separates fixed
   settings from facts that may only be appended.
-- **33 built-in tools**, mounted on demand: screen reading and taps, file read/write, Office
+- **34 built-in tools**, mounted on demand: screen reading and taps, file read/write, Office
   generation (`pptx` / `docx` / `xlsx`), image conversion, PDF pages and image-to-PDF, zip
   packing with zip-slip protection, chart rendering to PNG, web search and fetch (private and
   loopback addresses blocked by default), reminders, text-to-speech and speech-to-text.
@@ -36,6 +39,9 @@ character has its own day and may message you first). Chat histories are separat
 - **Voice replies**: cloud or self-hosted TTS, audio written to disk before the bubble appears,
   clips up to 60 seconds, multiple clips per reply, plain text underneath, in-app preview for
   produced files.
+- **Work skills**: 12 built-in procedures (decks, docs, sheets, research, minutes, plans, reviews,
+  mail, plus four checklists), each citing where it comes from; import your own `.md`, pick with
+  `/` in the workbench, or just ask — the model can call `use_skill` itself.
 - **Memory**: extraction, scoring, relevance recall, three fidelity levels; emotional charge slows
   decay.
 
@@ -83,7 +89,7 @@ License: GPL-3.0.
 - 意愿值低于阈值可以拒绝（设置里有开关，默认不开）
 - 世界书：设定与事实分开写入，事实只能追加，不能覆盖设定
 
-**33 个内置工具，按需挂载**
+**34 个内置工具，按需挂载**
 
 - 屏幕与手机：读屏、截图、点击、滑动、输入、按键、改设置、停用应用
 - 文件：读取、写入、列目录
@@ -129,7 +135,7 @@ cd android
 # 产物：android/app/build/outputs/apk/debug/app-debug.apk（约 143 MB，debug 未混淆）
 ```
 
-从 Releases 安装，或自行构建后在应用内填写 Key（OpenAI 兼容、Anthropic、Gemini 任选）。
+直接下 [`apk/PocketAgent-0.1.0-m2.apk`](apk/PocketAgent-0.1.0-m2.apk)，或自行构建；装好后在应用内填写 Key（OpenAI 兼容、Anthropic、Gemini 任选）。
 
 ### 安全边界
 
