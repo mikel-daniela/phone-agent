@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Cable
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Folder
@@ -104,6 +105,9 @@ fun SettingsScreen(
      */
     allowRefusal: Boolean = true,
     onToggleAllowRefusal: ((Boolean) -> Unit)? = null,
+    /** 工作模式「边干边聊」：干活时允许她带两句生活里的话。 */
+    workChitchat: Boolean = false,
+    onToggleWorkChitchat: ((Boolean) -> Unit)? = null,
     /** 当前语音模型（厂商 · 模型 · 音色）；null = 没配语音 Key。 */
     ttsLabel: String? = null,
     /** 点「语音模型」这一行：去语音 Key 页配置/切换。 */
@@ -460,6 +464,31 @@ fun SettingsScreen(
                             onClick = onOpenSkills,
                         )
                     }
+
+                    // ── 工作模式：边干边聊（2026-11-23）──────────────
+                    // ★ 用户：「让角色在工作时允许加上生活中的话题，做到边工作边聊天」。
+                    //   ⚠️ 默认关：一句"把合同转成 PDF"变成闲话夹操作，比冷淡更烦。
+                    PaListDivider()
+                    PaListRow(
+                        icon = Icons.Default.Chat,
+                        title = "边干边聊",
+                        subtitle = if (workChitchat) {
+                            "干活的时候也会顺口带两句生活里的事"
+                        } else {
+                            "只谈正事。打开之后，她手上办着事也会聊两句"
+                        },
+                        onClick = null,
+                        trailingContent = {
+                            androidx.compose.material3.Switch(
+                                checked = workChitchat,
+                                onCheckedChange = { onToggleWorkChitchat?.invoke(it) },
+                                colors = androidx.compose.material3.SwitchDefaults.colors(
+                                    checkedThumbColor = PaColor.SurfaceHigh,
+                                    checkedTrackColor = PaColor.Accent,
+                                ),
+                            )
+                        },
+                    )
 
                     // ══════════════════════════════════════════════
                     //  ★★ 2026-11-15：**在场模式**的两个开关

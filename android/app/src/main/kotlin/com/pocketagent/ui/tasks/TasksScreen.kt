@@ -279,6 +279,9 @@ fun TasksScreen(
      */
     replyViewMode: ReplyViewMode = ReplyViewMode.BOTH,
     onReplyViewMode: (ReplyViewMode) -> Unit = {},
+    /** 语音播报（自动朗读）开关；顶部小喇叭点它。 */
+    ttsEnabled: Boolean = false,
+    onToggleTts: (Boolean) -> Unit = {},
 
     /**
      * 打开**语音通话页**。
@@ -502,11 +505,14 @@ fun TasksScreen(
         // ══════════════════════════════════════════════════════
         Column(modifier = Modifier.fillMaxSize()) {
 
-                    ReplyModeSlider(
-                        mode = effectiveReplyMode,
+                    // ★ 2026-11-23：滑条换成三段式开关，右边多一个语音播报的小喇叭。
+                    //   理由见 `ReplyControls` 的文件注释。
+                    ReplyControls(
                         requested = replyViewMode,
                         canSpeak = voiceCanSpeak,
+                        ttsEnabled = ttsEnabled,
                         onPick = onReplyViewMode,
+                        onToggleTts = onToggleTts,
                     )
 
             // ★★ 2026-11-04 晚：**必须 fillMaxWidth**。

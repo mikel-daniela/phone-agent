@@ -323,6 +323,36 @@ class ChatModeTest {
     }
 
     @Test
+    fun `默认没有边干边聊那一节`() {
+        // ★ 2026-11-23 用户要「工作的时候允许加上生活中的话题」，
+        //   但这是**可选档**：默认关 —— 一句"把合同转成 PDF"变成闲话夹操作，
+        //   比冷淡更烦。开关在设置里（`workChitchat`）。
+        assertFalse("默认就带了边聊段", section.contains("## 手上办着事，日子也在过"))
+    }
+
+    @Test
+    fun `打开开关才有边干边聊`() {
+        val on = com.pocketagent.personalogic.WorkDiscipline.promptSection(chitchat = true)
+        assertTrue("开了开关也没有边聊段", on.contains("## 手上办着事，日子也在过"))
+        assertTrue("要有生活样本", on.contains("你那窗还开着么"))
+        assertTrue("自己说的不用对方接", on.contains("不用对方接"))
+        assertTrue("活紧先干完", on.contains("先干完"))
+    }
+
+    @Test
+    fun `边干边聊不改变正事的顺序`() {
+        // ⚠️ 反向钉子：开了边聊之后，"先给答案"必须还在，
+        //   而且排在边聊那一节**之前** —— 否则模型会把顺序反过来。
+        val on = com.pocketagent.personalogic.WorkDiscipline.promptSection(chitchat = true)
+        assertTrue("先给答案没了", on.contains("先给答案"))
+        assertTrue(
+            "正事应当在闲聊之前",
+            on.indexOf("先给答案") < on.indexOf("## 手上办着事，日子也在过"),
+        )
+        assertTrue("边聊不该把客服腔放回来", !on.contains("还有什么需要"))
+    }
+
+    @Test
     fun `工作纪律自己也不像说明书`() {
         // ★ 与 `PromptVoiceTest` 的存量体检互为补强：那里按九项判据扫，
         //   这里只钉"这一节不能有列表符/加粗/破折号"三条最刺眼的。

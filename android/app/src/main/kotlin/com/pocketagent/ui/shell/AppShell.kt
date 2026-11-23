@@ -879,6 +879,7 @@ fun AppShell(
 
                 // ── 任务 ────────────────────────────────────────
                 composable(Routes.TASKS) {
+                    val (ttsOn, setTtsOn) = rememberTtsSwitch(container)
                     // ── ★ 2026-11-03：模型选择 / 思考强度也补上状态承接 ─────
                     //
                     // ⚠️ 原来直接写 `container.modelChoice()`，靠 `modelRefresh++`
@@ -956,6 +957,8 @@ fun AppShell(
                         onShareScreen = { container.captureScreenForShare() },
             replyViewMode = container.replyViewMode(),
             onReplyViewMode = { container.setReplyViewMode(it) },
+            ttsEnabled = ttsOn,
+            onToggleTts = setTtsOn,
                     )
                 }
 
@@ -966,6 +969,7 @@ fun AppShell(
                 // ⚠️ 与聊天页**共用一个可组合函数**，但各有一份 ViewModel
                 //   （模式由 `buildTasksViewModel` 注进去）与各自的列表。
                 composable(Routes.WORKBENCH) {
+                    val (ttsOn, setTtsOn) = rememberTtsSwitch(container)
                     var modelChoiceState by remember { mutableStateOf(container.modelChoice()) }
                     var effortState by remember { mutableStateOf(container.thinkingEffort()) }
 
@@ -1090,6 +1094,8 @@ fun AppShell(
                         onShareScreen = { container.captureScreenForShare() },
             replyViewMode = container.replyViewMode(),
             onReplyViewMode = { container.setReplyViewMode(it) },
+            ttsEnabled = ttsOn,
+            onToggleTts = setTtsOn,
 
                         // ══════════════════════════════════════════════
                         //  ★★ 2026-11-04 晚：工作区 / 权限
@@ -1160,6 +1166,7 @@ fun AppShell(
                 //    ② 页首大标题是她此刻那一段的原文（`LifeformGreeting`）
                 //    ③ 小字写的是"她的今天 · 几点"，不是"她会怎么帮你"
                 composable(Routes.LIFEFORM) {
+                    val (ttsOn, setTtsOn) = rememberTtsSwitch(container)
                     var modelChoiceState by remember { mutableStateOf(container.modelChoice()) }
                     var effortState by remember { mutableStateOf(container.thinkingEffort()) }
 
@@ -1220,6 +1227,8 @@ fun AppShell(
                         onShareScreen = { container.captureScreenForShare() },
             replyViewMode = container.replyViewMode(),
             onReplyViewMode = { container.setReplyViewMode(it) },
+            ttsEnabled = ttsOn,
+            onToggleTts = setTtsOn,
                     )
                 }
 
@@ -1355,6 +1364,7 @@ fun AppShell(
                     // ⚠️ 它比「明暗主题」那边更隐蔽：那边有 `themeMode` 状态，
                     //    这边我当初只写了 getter，漏了状态承接。
                     var allowRefusalOn by remember { mutableStateOf(container.allowRefusal()) }
+                    var workChitchatOn by remember { mutableStateOf(container.workChitchat()) }
     var superNetworkOn by remember { mutableStateOf(container.superNetwork()) }
                     var linuxBuiltinOn by remember { mutableStateOf(container.isLinuxBuiltinEnabled()) }
 
@@ -1372,6 +1382,8 @@ fun AppShell(
                         onOpenKeys = { navController.navigate(Routes.KEYS) },
                                             // ★ 2026-11-02：「允许它拒绝」开关
         allowRefusal = allowRefusalOn,
+        workChitchat = workChitchatOn,
+        onToggleWorkChitchat = { workChitchatOn = it; container.setWorkChitchat(it) },
         onToggleAllowRefusal = { allowRefusalOn = it; container.setAllowRefusal(it) },
         ttsLabel = container.ttsLabel(),
         onOpenTtsKeys = { navController.navigate(Routes.KEYS) },
@@ -2131,5 +2143,25 @@ private fun GuideItem(name: String, why: String) {
     Column {
         Text(text = name, style = PaType.label, color = PaColor.TextPrimary)
         Text(text = why, style = PaType.caption, color = PaColor.TextSecondary)
+    }
+}
+
+/**
+ * 朗读开关的**界面侧**状态。
+ *
+ * ⚠️ 容器里的 `ttsEnabledValue` 是普通 `@Volatile var`，不是 Compose 状态：
+ *    点开关时值改了、也存了盘，但**不触发重组**，图标会停在原地不动。
+ *    这个项目已经因为同一族问题踩过四次（见 SettingsScreen「允许它拒绝」那条注释）。
+ *    ⇒ 外壳持有一个 tick，点一次 +1，读取时把它当 key。
+ *
+ * ★ 2026-11-23：用户要「聊天页最上面放个小喇叭，不用再进设置开关」。
+ */
+@Composable
+private fun rememberTtsSwitch(container: AppContainer): Pair<Boolean, (Boolean) -> Unit> {
+    var tick by remember { mutableIntStateOf(0) }
+    val on = remember(tick) { container.ttsEnabled() }
+    return on to { value ->
+        container.setTtsEnabled(value)
+        tick++
     }
 }

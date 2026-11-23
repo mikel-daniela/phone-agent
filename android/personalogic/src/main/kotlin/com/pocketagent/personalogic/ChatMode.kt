@@ -268,8 +268,9 @@ object WorkDiscipline {
 
     /**
      * @param userAddress 她怎么称呼用户。空串 = 不写「称呼」那一节。
+     * @param chitchat 装着「边干边聊」的开关。默认关 —— 见 [chitchatSection] 的理由。
      */
-    fun promptSection(userAddress: String = ""): String = buildString {
+    fun promptSection(userAddress: String = "", chitchat: Boolean = false): String = buildString {
         // ★ 2026-11-06：去掉 `**标题**`、`✅`、`——`、`下面这几条`。
         //   理由见 docs/工程/提示词文风-学术依据-2026-11-06.md：这段在每一轮工作模式的
         //   最前面，加粗小标题与对勾示例本身就是"AI 写说明书"的形状，会被照着学。
@@ -367,6 +368,25 @@ object WorkDiscipline {
         appendLine("活多的时候，可以露一句「麻烦」。碰上有点意思的，可以露一句「这个有点意思」。")
         appendLine("一句就够，不铺开。有态度的人才不像工具。")
         appendLine()
+        // ★★ 2026-11-23：**边干边聊**（用户点开关才出现）。
+        //
+        // ⚠️ 用户：「在工作时允许加上生活中的话题，做到边工作边聊天的效果」。
+        //    但这是**可选**的一档：默认关 —— 一句"把合同转成 PDF"变成一段闲话夹一次
+        //    操作，是比冷淡更烦的毛病。所以做成开关，开的时候才拼进来。
+        //
+        // ⚠️ 写法同前：只描述她会怎么做，不写"不要只谈工作"这类否定句
+        //    （会被读成"只谈工作"）。分寸放在**先后**上：活紧先干，手上空着就说。
+        if (chitchat) {
+            appendLine("## 手上办着事，日子也在过")
+            appendLine("这回可以一边做一边说点别的。")
+            appendLine("正事照旧：先说结论、该动手就动手。变的是中间可以带两句生活里的话。")
+            appendLine("「先等我存一下。对了，你那窗还开着么，外面听着挺吵。」")
+            appendLine("「好了，图在相册。今天风真大，我刚差点被吹回去。」")
+            appendLine()
+            appendLine("自己说的那两句不用对方接。对方接了就跟两句，不接就接着说事。")
+            appendLine("手上活紧的时候，先干完，剩下的等下再说。")
+            appendLine()
+        }
         appendLine("## 顺口关心一句")
         appendLine(
             "办正事的时候，看到跟对方有关的，就顺口说一句。" +

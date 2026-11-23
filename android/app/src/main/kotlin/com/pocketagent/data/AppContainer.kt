@@ -4088,6 +4088,28 @@ class AppContainer(context: Context) {
         }
     }
 
+    // ── 工作模式的「边干边聊」 ───────────────────────────────
+    /**
+     * 干活时允许她带两句生活里的话。
+     *
+     * ⚠️ **默认关**。工作模式原先的问题是"只剩正事、口气发凉"，
+     *    但那是**语气**问题，不是"要聊天"的问题 —— 默认开会让
+     *    "帮我把这个转成 PDF" 变成一段闲话夹一次操作，用户还得去找开关。
+     *    默认关 + 一个开关，谁需要谁开。
+     */
+    @Volatile
+    private var workChitchatValue: Boolean = false
+
+    fun workChitchat(): Boolean = workChitchatValue
+
+    fun setWorkChitchat(on: Boolean) {
+        workChitchatValue = on
+        startupScope.launch {
+            runCatching { pluginSourceStore.edit { it[KEY_WORK_CHITCHAT] = on } }
+                .onFailure { Timber.e(it, "工作边聊开关落盘失败") }
+        }
+    }
+
     // ── 回复显示形态（聊天页顶部滑条） ─────────────────────────
     private val replyViewModeHolder =
         androidx.compose.runtime.mutableStateOf(com.pocketagent.ui.tasks.ReplyViewMode.BOTH)
@@ -6123,7 +6145,7 @@ class AppContainer(context: Context) {
         // ⚠️ 与 `discipline` 互斥：那是"别演"，这是"怎么办事"。
         //    两条同时在场会互相稀释（见 `docs/工程/提示词负例改造-依据.md`
         //    引的 Instruction Stacking Collapse：指令越多，每条越弱）。
-        val workRules = if (sw.workDiscipline) com.pocketagent.personalogic.WorkDiscipline.promptSection(userAddr) else ""
+        val workRules = if (sw.workDiscipline) com.pocketagent.personalogic.WorkDiscipline.promptSection(userAddr, chitchat = workChitchatValue) else ""
         // ⚠️ 空段不拼。原来是一串 `a + "\n\n" + b + "\n\n" + c`，
         //    段一空就留下多余的分隔符和空行 —— 提示词里的空行不是免费的，
         //    它会被读成"这里本来有一段，只是被删了"。
@@ -7217,6 +7239,9 @@ class AppContainer(context: Context) {
                 ttsEnabledValue = pluginSourceStore.data.first()[KEY_TTS_ON] == true
             }.onFailure { Timber.e(it, "朗读开关读取失败") }
             runCatching {
+                workChitchatValue = pluginSourceStore.data.first()[KEY_WORK_CHITCHAT] == true
+            }.onFailure { Timber.e(it, "工作边聊开关读取失败") }
+            runCatching {
                 val saved = pluginSourceStore.data.first()[KEY_REPLY_VIEW]
                 replyViewModeHolder.value = com.pocketagent.ui.tasks.ReplyViewMode.of(saved)
             }.onFailure { Timber.e(it, "回复显示形态读取失败") }
@@ -7504,6 +7529,7 @@ class AppContainer(context: Context) {
 
         /** 自动朗读回复的开关（默认关）。 */
         private val KEY_TTS_ON = booleanPreferencesKey("tts_auto_speak_v1")
+    private val KEY_WORK_CHITCHAT = booleanPreferencesKey("work_chitchat_v1")
 
     /** 聊天页顶部滑条：一轮回复露出文字、语音，还是两样都要。 */
     private val KEY_REPLY_VIEW =
