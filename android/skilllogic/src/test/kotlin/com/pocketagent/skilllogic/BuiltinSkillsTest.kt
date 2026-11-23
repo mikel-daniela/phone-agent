@@ -16,12 +16,40 @@ import org.junit.Test
 class BuiltinSkillsTest {
 
     @Test
-    fun `内置技能覆盖八类工作场景`() {
-        assertEquals(8, BuiltinSkills.all.size)
+    fun `内置技能覆盖八类做法与四张速查`() {
+        assertEquals(12, BuiltinSkills.all.size)
         assertEquals(
-            listOf("deck", "doc", "sheet", "research", "minutes", "plan", "review", "mail"),
+            listOf(
+                "deck", "doc", "sheet", "research", "minutes", "plan", "review", "mail",
+                "writing-standard", "chart-standard", "doc-structure", "decision-record",
+            ),
             BuiltinSkills.all.map { it.id },
         )
+    }
+
+    @Test
+    fun `八条做法在前，四张速查在后`() {
+        // ★ 顺序是产品决定：清单有长度预算，先列的被裁掉概率低，
+        //   所以"开工时用的"必须排在"查的时候用的"前面。
+        assertEquals(
+            listOf("writing-standard", "chart-standard", "doc-structure", "decision-record"),
+            BuiltinSkills.all.takeLast(4).map { it.id },
+        )
+    }
+
+    @Test
+    fun `每条正文都点名了依据，不是凭空写的`() {
+        // ⚠️ 这条守的是"技能有出处"：至少有一处括号里的中文来源说明，
+        //    或者正文里出现了公认的框架名。改正文时删掉出处会让它红。
+        val sources = listOf(
+            "金字塔原理", "SCQA", "BLUF", "Google 技术写作", "Diátaxis", "ICAEW",
+            "Tufte", "Knaflic", "MECE", "DACI", "RAPID", "ADR", "Amazon 六页",
+            "GB/T 15834", "plain language", "pre-mortem", "OKR", "action title",
+        )
+        for (skill in BuiltinSkills.all) {
+            val hit = sources.any { skill.body.contains(it) }
+            assertEquals("「${skill.name}」正文里没写依据", true, hit)
+        }
     }
 
     @Test
@@ -57,7 +85,7 @@ class BuiltinSkillsTest {
     @Test
     fun `演示与文档都写了可执行的替代动作，而不是只说不要`() {
         val deck = BuiltinSkills.byId("deck")!!
-        assertThat(deck.body).contains("标题写结论")
+        assertThat(deck.body).contains("标题写成能独立读懂的完整句子")
         assertThat(deck.body).contains("make_slides")
         val doc = BuiltinSkills.byId("doc")!!
         assertThat(doc.body).contains("结论写在第一段")

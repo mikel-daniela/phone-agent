@@ -53,7 +53,7 @@ class SkillPromptTest {
         val deck = BuiltinSkills.byId("deck")!!
         val section = SkillPrompt.activeSection(deck, SkillPrompt.How.PICKED)
         assertThat(section).contains("这一轮按「做演示文稿」做")
-        assertThat(section).contains("标题写结论")
+        assertThat(section).contains("标题写成能独立读懂的完整句子")
     }
 
     @Test
