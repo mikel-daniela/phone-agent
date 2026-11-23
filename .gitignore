@@ -11,6 +11,8 @@ build/
 .kotlin/
 out/
 *.apk
+# apksigner 的签名副作用文件（每签一次生成一个）
+*.idsig
 *.aab
 *.ap_
 *.dex
