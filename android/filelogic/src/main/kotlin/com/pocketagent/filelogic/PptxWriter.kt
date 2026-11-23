@@ -98,6 +98,65 @@ object PptxWriter {
     private const val BODY_Y_WITH_SUBTITLE = 3_200_400
     private const val BODY_CY = SLIDE_CY - 457_200
 
+    // ── 2026-11-23：三种页型的版式（封面 / 章节 / 内容）───────────
+    //
+    // ★ 为什么要有页型，而不是"所有页一个模板"
+    //   用户的原话是「产出的 ppt 这些没啥审美」。审美不是配色问题 ——
+    //   一份全是"标题 + 要点"的稿子，就算字体再对，看起来也像大纲。
+    //   真正的差别在于**首页与内页不同**：封面要空、要大、要只有一句话；
+    //   内页要有层级（标题细、正文松）、要有页码让人知道还剩多少。
+    //
+    // 判据全在数据里，不额外加参数：
+    //   · 第 0 页                                  → 封面
+    //   · 只有标题、没要点没副标题（且不是第 0 页）→ 章节页
+    //   · 其余                                     → 内容页
+
+    /** 封面左侧的强调色竖条：0.3 英寸宽，通栏高。 */
+    private const val COVER_BAND_CX = 274_320
+
+    /** 封面大标题（54pt）。 */
+    private const val COVER_TITLE_SZ = 5_400
+
+    /** 封面标题的位置：偏下三分之一处，上面留白才显得稳。 */
+    private const val COVER_TITLE_Y = 2_438_400
+    private const val COVER_TITLE_CY = 1_828_800
+
+    /** 封面副标题（22pt），紧贴在大标题下面。 */
+    private const val COVER_SUB_Y = 4_343_400
+    private const val COVER_SUB_SZ = 2_200
+    private const val COVER_SUB_CY = 914_400
+
+    /** 封面上那行小字（"演示文稿"）。字号小、颜色灰，作用是给标题一个上界。 */
+    private const val COVER_EYEBROW_Y = 1_828_800
+    private const val COVER_EYEBROW_SZ = 1_200
+
+    /** 内容页标题（28pt）与它下面的细线。 */
+    private const val HEAD_SZ = 2_800
+    private const val HEAD_Y = 640_080
+    private const val HEAD_CY = 822_960
+    private const val RULE_Y = 1_562_100
+    private const val RULE_CY = 38_100
+    private const val RULE_CX = 1_371_600
+
+    /** 内容页正文的起点（细线下面留一段呼吸）。 */
+    private const val CONTENT_BODY_Y = 2_019_300
+
+    /** 页码：右下角，10pt。 */
+    private const val PAGE_NO_CX = 1_371_600
+    private const val PAGE_NO_CY = 365_760
+    private const val PAGE_NO_SZ = 1_000
+    private const val PAGE_NO_Y = SLIDE_CY - 731_520
+
+    /** 章节页：序号（72pt）+ 标题（36pt）+ 短横线。 */
+    private const val SECTION_NO_SZ = 7_200
+    private const val SECTION_TITLE_SZ = 3_600
+
+    /** 强调色（与 theme1.xml 的 accent1 同值，见 [themeXml]）。 */
+    private const val ACCENT = "C96442"
+    private const val ACCENT_SOFT = "E8D5CC"
+    private const val INK = "1F1B18"
+    private const val MUTED = "6B625C"
+
     /** 字号（百分之一磅）：40pt 标题、18pt 正文。 */
     private const val TITLE_SZ = 4_000
     private const val SUBTITLE_SZ = 2_000
@@ -359,58 +418,225 @@ object PptxWriter {
         append(emptyTreeXml())
 
         val title = clamp(slide.title)
-        // 形状 id 必须唯一且 > 0；标题恒为 2、副标题 3、正文 4（与文档顺序无关，便于排查）
+        val subtitle = slide.subtitle?.trim()?.takeIf { it.isNotEmpty() }?.let(::clamp)
+        val bullets = slide.bullets.map { clamp(it) }.filter { it.isNotEmpty() }
+
+        when {
+            index == 0 -> coverXml(title, subtitle, bullets)
+            bullets.isEmpty() && subtitle == null -> sectionXml(title, index)
+            else -> contentXml(title, subtitle, bullets, index)
+        }
+
+        append("</p:spTree></p:cSld>")
+        append("<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>")
+        append("</p:sld>")
+    }
+
+    /** 封面：左侧强调色竖条 + 小字 + 大标题 + 副标题（要是有）。 */
+    private fun StringBuilder.coverXml(title: String, subtitle: String?, bullets: List<String>) {
+        append(
+            rectXml(
+                shapeId = 10,
+                name = "封面色条",
+                x = 0,
+                y = 0,
+                cx = COVER_BAND_CX,
+                cy = SLIDE_CY,
+                color = ACCENT,
+            ),
+        )
+        val left = COVER_BAND_CX + MARGIN_X
+        val width = SLIDE_CX - left - MARGIN_X
+        append(
+            textBoxXml(
+                shapeId = 2,
+                name = "封面小字",
+                x = left,
+                y = COVER_EYEBROW_Y,
+                cx = width,
+                cy = 365_760,
+                paragraphs = listOf(
+                    Paragraph(text = "演 示 文 稿", sizeSz = COVER_EYEBROW_SZ, bold = false, color = ACCENT),
+                ),
+            ),
+        )
+        append(
+            textBoxXml(
+                shapeId = 3,
+                name = "封面标题",
+                x = left,
+                y = COVER_TITLE_Y,
+                cx = width,
+                cy = COVER_TITLE_CY,
+                paragraphs = listOf(
+                    Paragraph(text = title, sizeSz = COVER_TITLE_SZ, bold = true, color = INK),
+                ),
+            ),
+        )
+        if (subtitle != null) {
+            append(
+                textBoxXml(
+                    shapeId = 4,
+                    name = "封面副标题",
+                    x = left,
+                    y = COVER_SUB_Y,
+                    cx = width,
+                    cy = COVER_SUB_CY,
+                    paragraphs = listOf(
+                        Paragraph(text = subtitle, sizeSz = COVER_SUB_SZ, bold = false, color = MUTED),
+                    ),
+                ),
+            )
+        }
+        // 封面上如果给了要点，压在左下角当"这一份讲什么"的提纲（最多 3 条）。
+        if (bullets.isNotEmpty()) {
+            append(
+                textBoxXml(
+                    shapeId = 5,
+                    name = "封面提纲",
+                    x = left,
+                    y = SLIDE_CY - 1_828_800,
+                    cx = width,
+                    cy = 1_462_500,
+                    paragraphs = bullets.take(3).map {
+                        Paragraph(text = it, sizeSz = 1_400, bold = false, bullet = true, color = MUTED)
+                    },
+                ),
+            )
+        }
+    }
+
+    /** 章节页：大号序号 + 标题 + 强调色短横线，居中留白。 */
+    private fun StringBuilder.sectionXml(title: String, index: Int) {
+        val width = SLIDE_CX - MARGIN_X * 2
+        append(
+            textBoxXml(
+                shapeId = 2,
+                name = "章节序号",
+                x = MARGIN_X,
+                y = 2_133_600,
+                cx = width,
+                cy = 1_371_600,
+                paragraphs = listOf(
+                    Paragraph(
+                        // 用页码而不是第几个章节：章节页多半就是第 2 页，
+                        // 写 01 会让人以为还有第 0 页。
+                        text = (index + 1).toString().padStart(2, '0'),
+                        sizeSz = SECTION_NO_SZ,
+                        bold = true,
+                        color = ACCENT,
+                    ),
+                ),
+            ),
+        )
+        append(
+            rectXml(
+                shapeId = 10,
+                name = "章节横线",
+                x = MARGIN_X,
+                y = 3_657_600,
+                cx = RULE_CX,
+                cy = RULE_CY,
+                color = ACCENT,
+            ),
+        )
+        append(
+            textBoxXml(
+                shapeId = 3,
+                name = "章节标题",
+                x = MARGIN_X,
+                y = 3_962_400,
+                cx = width,
+                cy = 1_371_600,
+                paragraphs = listOf(
+                    Paragraph(text = title, sizeSz = SECTION_TITLE_SZ, bold = true, color = INK),
+                ),
+            ),
+        )
+    }
+
+    /** 内容页：标题 + 细线 + 要点 + 页码。 */
+    private fun StringBuilder.contentXml(
+        title: String,
+        subtitle: String?,
+        bullets: List<String>,
+        index: Int,
+    ) {
         append(
             textBoxXml(
                 shapeId = 2,
                 name = "标题 ${index + 1}",
                 x = MARGIN_X,
-                y = TITLE_Y,
+                y = HEAD_Y,
                 cx = TITLE_CX,
-                cy = TITLE_CY,
+                cy = HEAD_CY,
                 paragraphs = listOf(
-                    Paragraph(text = title, sizeSz = TITLE_SZ, bold = true),
+                    Paragraph(text = title, sizeSz = HEAD_SZ, bold = true, color = INK),
                 ),
             ),
         )
-
-        val subtitle = slide.subtitle?.trim()?.takeIf { it.isNotEmpty() }?.let(::clamp)
+        append(
+            rectXml(
+                shapeId = 10,
+                name = "标题细线",
+                x = MARGIN_X,
+                y = RULE_Y,
+                cx = RULE_CX,
+                cy = RULE_CY,
+                color = ACCENT,
+            ),
+        )
         if (subtitle != null) {
             append(
                 textBoxXml(
                     shapeId = 3,
                     name = "副标题 ${index + 1}",
                     x = MARGIN_X,
-                    y = SUBTITLE_Y,
+                    y = CONTENT_BODY_Y,
                     cx = TITLE_CX,
-                    cy = SUBTITLE_CY,
+                    cy = 640_080,
                     paragraphs = listOf(
-                        Paragraph(text = subtitle, sizeSz = SUBTITLE_SZ, bold = false),
+                        Paragraph(text = subtitle, sizeSz = SUBTITLE_SZ, bold = false, color = MUTED),
                     ),
                 ),
             )
         }
-
-        val bullets = slide.bullets.map { clamp(it) }.filter { it.isNotEmpty() }
         if (bullets.isNotEmpty()) {
+            // 有副标题就往下挪一行，避免与副标题重叠
+            val bodyY = if (subtitle != null) CONTENT_BODY_Y + 822_960 else CONTENT_BODY_Y
             append(
                 textBoxXml(
                     shapeId = 4,
                     name = "正文 ${index + 1}",
                     x = MARGIN_X,
-                    y = if (subtitle != null) BODY_Y_WITH_SUBTITLE else BODY_Y_PLAIN,
+                    y = bodyY,
                     cx = TITLE_CX,
-                    cy = BODY_CY,
+                    cy = (SLIDE_CY - bodyY - 640_080).coerceAtLeast(914_400),
                     paragraphs = bullets.map {
-                        Paragraph(text = it, sizeSz = BODY_SZ, bold = false, bullet = true)
+                        Paragraph(text = it, sizeSz = BODY_SZ, bold = false, bullet = true, color = INK)
                     },
                 ),
             )
         }
-
-        append("</p:spTree></p:cSld>")
-        append("<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>")
-        append("</p:sld>")
+        append(
+            textBoxXml(
+                shapeId = 6,
+                name = "页码 ${index + 1}",
+                x = SLIDE_CX - MARGIN_X - PAGE_NO_CX,
+                y = PAGE_NO_Y,
+                cx = PAGE_NO_CX,
+                cy = PAGE_NO_CY,
+                paragraphs = listOf(
+                    Paragraph(
+                        text = (index + 1).toString(),
+                        sizeSz = PAGE_NO_SZ,
+                        bold = false,
+                        color = MUTED,
+                        align = "r",
+                    ),
+                ),
+            ),
+        )
     }
 
     /**
@@ -435,6 +661,10 @@ object PptxWriter {
         val sizeSz: Int,
         val bold: Boolean,
         val bullet: Boolean = false,
+        /** 文字颜色（`RRGGBB`）。null = 用主题默认（黑）。 */
+        val color: String? = null,
+        /** 段落对齐：null（左）/ `"r"`（右）/ `"ctr"`（居中）。 */
+        val align: String? = null,
     )
 
     private fun textBoxXml(
@@ -467,13 +697,17 @@ object PptxWriter {
 
     private fun paragraphXml(p: Paragraph): String = buildString {
         append("<a:p>")
+        // ⚠️ `a:pPr` 的子元素也有 schema 顺序：buClr 必须在 buFont / buChar **之前**。
+        //    顺序错了 PowerPoint 拒开，而报错完全指不到顺序上。
+        val alignAttr = if (p.align != null) """ algn="${p.align}"""" else ""
         if (p.bullet) {
             // marL/indent 一正一负 = 悬挂缩进：换行后的文字与首字对齐，而不是顶到符号下面
-            append("""<a:pPr marL="285750" indent="-285750">""")
+            append("""<a:pPr marL="285750" indent="-285750"$alignAttr>""")
+            append("""<a:buClr><a:srgbClr val="$ACCENT_SOFT"/></a:buClr>""")
             append("""<a:buFont typeface="Arial"/><a:buChar char="•"/>""")
             append("</a:pPr>")
         } else {
-            append("""<a:pPr><a:buNone/></a:pPr>""")
+            append("""<a:pPr$alignAttr><a:buNone/></a:pPr>""")
         }
         // 换行必须拆成 a:br —— a:t 里的 \n 会被当成普通字符丢掉（同 DOCX 的 w:t）
         val lines = p.text.replace("\r\n", "\n").replace('\r', '\n').split('\n')
@@ -488,15 +722,53 @@ object PptxWriter {
         append("</a:p>")
     }
 
-    private fun runXml(text: String, p: Paragraph): String =
-        "<a:r>" +
-            // ⚠️ a:rPr 的子元素顺序有 schema 约束：先 fill，再 latin，最后 sz/b。
-            //    顺序错了 PowerPoint 拒开，而报错完全指不到顺序上。
-            """<a:rPr lang="zh-CN" altLang="en-US" sz="${p.sizeSz}"""" +
-            (if (p.bold) """ b="1"""" else "") +
-            """ dirty="0"/>""" +
-            """<a:t>${OoxmlPackage.xmlText(text)}</a:t>""" +
-            "</a:r>"
+    private fun runXml(text: String, p: Paragraph): String = buildString {
+        append("<a:r>")
+        // ⚠️ a:rPr 的子元素顺序有 schema 约束：先 fill，再 latin，最后 sz/b。
+        //    顺序错了 PowerPoint 拒开，而报错完全指不到顺序上。
+        //    所以有颜色时不能自闭合 rPr —— 必须把 solidFill 塞进去。
+        append("""<a:rPr lang="zh-CN" altLang="en-US" sz="${p.sizeSz}"""")
+        if (p.bold) append(""" b="1"""")
+        append(""" dirty="0"""")
+        if (p.color == null) {
+            append("/>")
+        } else {
+            append(">")
+            append("""<a:solidFill><a:srgbClr val="${p.color}"/></a:solidFill>""")
+            append("</a:rPr>")
+        }
+        append("""<a:t>${OoxmlPackage.xmlText(text)}</a:t>""")
+        append("</a:r>")
+    }
+
+    /**
+     * 一个纯色矩形（装饰条 / 分隔线）。
+     *
+     * ★ 不填 `p:txBody`：它是形状，不是文本框。多一个空 txBody 会让某些版本的
+     *   PowerPoint 在编辑时把它当文本框选中，体验很差。
+     */
+    private fun rectXml(
+        shapeId: Int,
+        name: String,
+        x: Int,
+        y: Int,
+        cx: Int,
+        cy: Int,
+        color: String,
+    ): String = buildString {
+        append("<p:sp>")
+        append("<p:nvSpPr>")
+        append("""<p:cNvPr id="$shapeId" name="${OoxmlPackage.xmlText(name)}"/>""")
+        append("""<p:cNvSpPr/><p:nvPr/>""")
+        append("</p:nvSpPr>")
+        append("<p:spPr>")
+        append("""<a:xfrm><a:off x="$x" y="$y"/><a:ext cx="$cx" cy="$cy"/></a:xfrm>""")
+        append("""<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>""")
+        append("""<a:solidFill><a:srgbClr val="$color"/></a:solidFill>""")
+        append("<a:ln><a:noFill/></a:ln>")
+        append("</p:spPr>")
+        append("</p:sp>")
+    }
 
     /** 超长截断。按 code point 数，避免把 emoji 的代理对切一半。 */
     private fun clamp(raw: String): String {

@@ -142,6 +142,70 @@ class PptxWriterTest {
         assertFalse(slide.contains("""name="正文 1""""))
     }
 
+    // ══════════════════════════════════════════════════════════════
+    //  ★ 2026-11-23：版式重做（封面 / 章节 / 内容三种页型）
+    // ══════════════════════════════════════════════════════════════
+    //
+    // 用户的原话是「产出的 ppt 这些没啥审美」。这几条钉住的不是配色，
+    // 而是**结构差异**：首页与内页长得不一样，内页有页码，章节有分隔。
+    // 一旦有人把页型判据改坏（比如又退回"所有页一个模板"），立刻红。
+
+    @Test
+    fun `第一页是封面，有色条但没有页码`() {
+        val slide = unzip(
+            deck(
+                PptxWriter.Slide("季度回顾", subtitle = "2026 Q4"),
+                PptxWriter.Slide("收入", bullets = listOf("涨 12%")),
+            ),
+        ).getValue("ppt/slides/slide1.xml")
+        assertTrue("封面要有强调色竖条", slide.contains("C96442"))
+        assertTrue("封面要有小字", slide.contains("演 示 文 稿"))
+        assertFalse("封面不该有页码", slide.contains("页码 1"))
+    }
+
+    @Test
+    fun `内容页有页码且靠右`() {
+        val slide = unzip(
+            deck(
+                PptxWriter.Slide("封面"),
+                PptxWriter.Slide("收入", bullets = listOf("涨 12%")),
+            ),
+        ).getValue("ppt/slides/slide2.xml")
+        assertTrue("内容页要有页码", slide.contains("页码 2"))
+        assertTrue("页码要右对齐", slide.contains("algn=\"r\""))
+    }
+
+    @Test
+    fun `只有标题的内页当章节页，带大号序号`() {
+        val slide = unzip(
+            deck(
+                PptxWriter.Slide("封面"),
+                PptxWriter.Slide("第二部分"),
+            ),
+        ).getValue("ppt/slides/slide2.xml")
+        assertTrue("章节页要有大号序号", slide.contains("sz=\"7200\""))
+        assertTrue("章节页要有序号文字", slide.contains(">02<"))
+    }
+
+    @Test
+    fun `项目符号的颜色声明在字体之前`() {
+        // OOXML 的 a:pPr 子元素有序：buClr 必须在 buFont 之前，错了 PowerPoint 会拒开。
+        val slide = unzip(deck(PptxWriter.Slide("封面"), PptxWriter.Slide("标题", listOf("要点"))))
+            .getValue("ppt/slides/slide2.xml")
+        val buClr = slide.indexOf("<a:buClr>")
+        val buFont = slide.indexOf("<a:buFont ")
+        assertTrue("两段都应该有", buClr > 0 && buFont > 0)
+        assertTrue("buClr 必须在 buFont 之前", buClr < buFont)
+    }
+
+    @Test
+    fun `装饰矩形不是文本框`() {
+        val slide = unzip(deck(PptxWriter.Slide("封面"))).getValue("ppt/slides/slide1.xml")
+        val from = slide.indexOf("封面色条") - 80
+        val segment = slide.substring(from.coerceAtLeast(0), slide.indexOf("</p:sp>", from))
+        assertFalse("色条里不该有 txBody", segment.contains("<p:txBody>"))
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun `标题不能为空`() {
         PptxWriter.Slide("   ")
