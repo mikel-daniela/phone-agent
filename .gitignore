@@ -128,6 +128,13 @@ data-export/
 #   对象仍然留在 .git 里，克隆体积永久变大。GitHub 对单文件 100 MB
 #   是硬拒、对仓库 1 GB 是软警告 —— 这一个文件就够踩两道线。
 #
+# ⚠️ 例外：`apk/PocketAgent-<版本>.apk` 是要**给用户下载**的发行包。
+#    GitHub Releases 的资产上传需要带 contents:write 的 token，本机只有 SSH 部署
+#    密钥（能 push、不能打 API），所以发行包直接进仓库这个目录。
+#    单个文件 63 MB，在 GitHub 的 100 MB 硬上限以内；只保留最新两三个版本，
+#    旧的删掉（历史里仍在，但页面清爽）。
+!apk/PocketAgent-*.apk
+
 # ⚠️ 上面的 `*.apk` 本来就能挡住它 —— 但只在**文件**层面生效。
 #   `git add dist/` 这种"加整个目录"的写法在某些 Git 版本下会先看目录，
 #   所以这里把目录本身也钉住，两道一起上。
