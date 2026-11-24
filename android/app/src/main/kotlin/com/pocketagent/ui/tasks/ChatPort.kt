@@ -978,7 +978,18 @@ class ContainerChatPort(private val container: AppContainer) : ChatPort {
         }
         // ⚠️ 2026-11-17：严格清洗把整段外文删光时，**不能因此丢掉回复**。
         //    改成阶梯式取"能显示的版本"，日志里留原文开头，下次一眼能定位。
-        val shown = com.pocketagent.personalogic.OutputSanitizer.displayable(raw)
+        var shown = com.pocketagent.personalogic.OutputSanitizer.displayable(raw)
+        // ★★ 2026-11-24：聊天里不留排版痕迹（小标题 / 加粗 / 分点）。
+        //    用户的原话是"会变成一种模板化的回答，感觉会一直在套公式"。
+        //    内容对不对是一回事，**形状**先出卖了它 —— 人发微信不会先加粗。
+        //    ⚠️ 只改聊天：工作模式的产出就是要给人看的文档，那里的小标题是功能。
+        if (!chatMode.isWork) {
+            val shaped = com.pocketagent.personalogic.ReplyShape.strip(shown)
+            if (shaped != shown) {
+                Timber.i("回复形状：去掉排版痕迹（%d 字 → %d 字）", shown.length, shaped.length)
+            }
+            shown = shaped
+        }
         if (shown != cleaned) {
             Timber.w(
                 "输出清洗后几乎为空（原文 %d 字 → 严格 %d 字 / 实用 %d 字），改为宽松显示：%s",

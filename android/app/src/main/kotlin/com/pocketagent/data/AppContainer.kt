@@ -5212,13 +5212,20 @@ class AppContainer(context: Context) {
     /**
      * **去味诊断** —— 看最近几轮回复有没有回落到 AI 腔。
      *
-     * @param recentReplies 最近的助理回复（升序）。**只看末尾 8 条** ——
-     *   窗口再长会把"早就改好的旧毛病"反复报出来。
+     * @param recentReplies 最近的助理回复（升序）。窗口是
+     *   [com.pocketagent.personalogic.Humanizer.WINDOW] 轮，**不是 8** ——
+     *   8 条只装得下"刚才这一会儿"，而用户抱怨的是"聊久了会变味"：
+     *   那是跨十几轮才显形的漂移。"开口重复""收尾重复"这两种，
+     *   三轮就得看满四句才数得出来。
+     *
+     * ⚠️ 另一头也有限制：窗口不能无限长。旧毛病早就改好之后
+     *    还每轮都写一条禁令，会让提示词变成一张清单 —— 那本身又是 AI 味
+     *    （见 [com.pocketagent.personalogic.Humanizer.promptSection]）。
      */
     fun humanizerSection(recentReplies: List<String>): String {
         val stage = relationshipStage()
         val findings = com.pocketagent.personalogic.Humanizer.diagnose(
-            replies = recentReplies.takeLast(8),
+            replies = recentReplies.takeLast(com.pocketagent.personalogic.Humanizer.WINDOW),
             stage = stage,
             turnsSinceStageChange = totalUserTurns,
         )

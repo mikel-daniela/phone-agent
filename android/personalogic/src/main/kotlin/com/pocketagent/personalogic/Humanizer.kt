@@ -53,6 +53,20 @@ object Humanizer {
 
         /** 给自己的话加旁白 */
         SELF_NARRATION("自述旁白"),
+
+        /**
+         * 连续几轮用同一个词开口。
+         *
+         * ★ 为什么单列一条：模型的默认开场比它的用词更早暴露身份。
+         *   "嗯""其实""说到这个"开头连着来三轮，读的人立刻知道不是人。
+         */
+        OPENING_LOOP("开口重复"),
+
+        /** 连续几轮用同一个词收尾。 */
+        TAIL_LOOP("收尾重复"),
+
+        /** 回复里出现小标题 / 加粗 / 分点 —— 见 [ReplyShape]。 */
+        MARKDOWN_SHAPE("排版痕迹"),
     }
 
     /**
@@ -71,14 +85,20 @@ object Humanizer {
         if (replies.isEmpty()) return emptyList()
         val out = mutableListOf<Finding>()
 
+        // ★ 只看最近 [WINDOW] 轮。
+        //   ⚠️ 这里自己切，不指望调用方切对：原来 `humanizerSection` 切 8 条，
+        //      而 8 条装不下"开口重复"这类漂移 —— 三轮一共才 8 句，第四句
+        //      换掉就看不见了。窗口太短等于诊断只看最后两分钟。
+        val recent = replies.takeLast(WINDOW)
+
         // ① 分点：出现两轮以上才算 — 偶尔一次可以说是"分条说清一件事"
-        val structured = replies.count { looksStructured(it) }
+        val structured = recent.count { looksStructured(it) }
         if (structured >= 2) {
-            out += Finding(Code.STRUCTURED, "最近 ${replies.size} 轮里有 $structured 轮在分点")
+            out += Finding(Code.STRUCTURED, "最近 ${recent.size} 轮里有 $structured 轮在分点")
         }
 
         // ② 客服尾巴：只看最后一条（这是"当下该改"的）
-        replies.lastOrNull()?.let { last ->
+        recent.lastOrNull()?.let { last ->
             SERVICE_TAILS.firstOrNull { last.contains(it) }?.let {
                 out += Finding(Code.SERVICE_TAIL, "结尾出现了「$it」")
             }
@@ -86,7 +106,7 @@ object Humanizer {
 
         // ③ 口头禅循环：同一句出现 3 次以上
         val counts = HashMap<String, Int>()
-        for (r in replies) {
+        for (r in recent) {
             for (c in CATCHPHRASE_CANDIDATES) {
                 if (r.contains(c)) counts[c] = (counts[c] ?: 0) + 1
             }
@@ -96,8 +116,8 @@ object Humanizer {
         }
 
         // ④ 长度扁平：全都落在同一个窄区间
-        if (replies.size >= 4) {
-            val lens = replies.map { it.length }
+        if (recent.size >= 4) {
+            val lens = recent.map { it.length }
             val avg = lens.average()
             val spread = (lens.max() - lens.min()).toDouble()
             if (avg > 0 && spread / avg < 0.15) {
@@ -117,10 +137,79 @@ object Humanizer {
         }
 
         // ⑥ 自述旁白
-        if (replies.any { r -> SELF_NARRATION.any { r.contains(it) } }) {
+        if (recent.any { r -> SELF_NARRATION.any { r.contains(it) } }) {
             out += Finding(Code.SELF_NARRATION, "在解释自己为什么这么说")
         }
+
+        // ⑦ 开口重复：连着几轮用同一个词起头
+        repeatedOpening(recent)?.let { (word, times) ->
+            out += Finding(Code.OPENING_LOOP, "「$word」开了 $times 轮的头")
+        }
+
+        // ⑧ 收尾重复：连着几轮用同一个词收束
+        repeatedTail(recent)?.let { (word, times) ->
+            out += Finding(Code.TAIL_LOOP, "「$word」收了 $times 轮的尾")
+        }
+
+        // ⑨ 排版痕迹：小标题 / 加粗 / 分点
+        if (recent.any { ReplyShape.hasFormatting(it) }) {
+            out += Finding(Code.MARKDOWN_SHAPE, "回复里有加粗、小标题或分点")
+        }
         return out
+    }
+
+    /**
+     * 重复的开口。
+     *
+     * 判据刻意很窄：只取第一句前四个字，且必须**完全相同**。
+     * 宽一点（比如"意思相近"）就会把正常的变化也算进去，
+     * 于是每轮都写一条禁令 —— 那本身又是模板。
+     */
+    private fun repeatedOpening(replies: List<String>): Pair<String, Int>? {
+        val counts = HashMap<String, Int>()
+        for (r in replies) {
+            val head = openingOf(r) ?: continue
+            counts[head] = (counts[head] ?: 0) + 1
+        }
+        return counts.entries
+            .filter { it.value >= LOOP_REPEAT && it.key.length in 1..MAX_LOOP_WORD_CHARS }
+            .maxByOrNull { it.value }
+            ?.let { it.key to it.value }
+    }
+
+    /** 重复的收尾。 */
+    private fun repeatedTail(replies: List<String>): Pair<String, Int>? {
+        val counts = HashMap<String, Int>()
+        for (r in replies) {
+            val tail = tailOf(r) ?: continue
+            counts[tail] = (counts[tail] ?: 0) + 1
+        }
+        return counts.entries
+            .filter { it.value >= LOOP_REPEAT && it.key.length in 2..MAX_LOOP_WORD_CHARS }
+            .maxByOrNull { it.value }
+            ?.let { it.key to it.value }
+    }
+
+    /** 第一小句的前几个字；以数字/英文开头的不算（那多半是引用用户的话）。 */
+    private fun openingOf(text: String): String? {
+        val first = text.trim().lineSequence().firstOrNull { it.isNotBlank() } ?: return null
+        val clause = first.takeWhile { it !in CLAUSE_BREAKS && !it.isWhitespace() }.trim()
+        // ⚠️ 单字开口必须收：真机上最刺眼的就是连续三轮「嗯，……」。
+        //    原来要求 ≥2 字，于是那一类**恰好**漏掉 —— 判据比症状还窄。
+        if (clause.isEmpty()) return null
+        val head = clause.first()
+        if (head.isDigit() || head in 'a'..'z' || head in 'A'..'Z') return null
+        return clause.take(MAX_LOOP_WORD_CHARS)
+    }
+
+    /** 最后一小句去掉标点后的末几个字。 */
+    private fun tailOf(text: String): String? {
+        val last = text.trim().lineSequence().lastOrNull { it.isNotBlank() } ?: return null
+        val stripped = last.trimEnd { it in TRAILING_PUNCT }
+        if (stripped.length < 2) return null
+        val clause = stripped.takeLastWhile { it !in CLAUSE_BREAKS && !it.isWhitespace() }
+        if (clause.length < 2) return null
+        return clause.takeLast(MAX_LOOP_WORD_CHARS)
     }
 
     /**
@@ -147,6 +236,14 @@ object Humanizer {
                     "回复长度太均匀了。有时候一个字就够，有时候多说两句。"
                 Code.SELF_NARRATION ->
                     "不解释你为什么这么说。人不会给自己的话加旁白。"
+                // ★ 引用的是**她自己用过的词**，不是我们写的禁令。
+                //   模型对"你自己的原话"比对抽象的规则敏感得多。
+                Code.OPENING_LOOP ->
+                    "你最近几轮开头都用了同一个词。换一个开头，哪怕直接说事也行。"
+                Code.TAIL_LOOP ->
+                    "你最近几轮结尾都收在同一个词上。这次别收得那么齐，说完就停也行。"
+                Code.MARKDOWN_SHAPE ->
+                    "别用加粗、小标题、分点。你不是在写文档，是在说话。"
                 // 关系推进不靠单句禁令，见下面那段
                 Code.STUCK_RELATION -> null
             }
@@ -180,6 +277,26 @@ object Humanizer {
 
     /** 多少轮不推进关系就算"停滞"。 */
     private const val STUCK_TURNS = 40
+
+    /**
+     * 去味诊断看最近多少轮。
+     *
+     * ★ 原来调用方切 8 条。8 条装不下"漂移"：它是一点点发生的，
+     *   只有跨过十几轮才看得出来。16 条 ≈ 一次连续聊天的长度。
+     */
+    const val WINDOW = 16
+
+    /** 同一个开口/收尾出现几轮才算循环。 */
+    private const val LOOP_REPEAT = 3
+
+    /** 判重复时最多取几个字。 */
+    private const val MAX_LOOP_WORD_CHARS = 4
+
+    /** 小句的断点。 */
+    private const val CLAUSE_BREAKS = "，。！？；：、,.!?;:…—"
+
+    /** 句末会被忽略的标点。 */
+    private const val TRAILING_PUNCT = "。！？…～~，,.!?． "
 
     private val STRUCTURE_MARKERS = listOf(
         "**", "##", "•", "- ", "1. ", "第一，", "首先，", "其次，",

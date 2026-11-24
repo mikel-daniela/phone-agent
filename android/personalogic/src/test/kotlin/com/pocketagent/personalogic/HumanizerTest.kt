@@ -156,4 +156,74 @@ class HumanizerTest {
         assertTrue(Humanizer.looksStructured("1. 第一件事"))
         assertFalse(Humanizer.looksStructured("那就早点睡吧"))
     }
+
+    // ── 2026-11-24：长对话漂移（用户："会变成一种模板化的回答"） ──
+
+    @Test
+    fun `连着三轮同一个词开口会被抓出来`() {
+        val f = Humanizer.diagnose(
+            listOf("嗯，我在。", "嗯，你说。", "嗯，好啊。"),
+            RelationshipStage.CLOSE,
+            3,
+        )
+        assertTrue(f.any { it.code == Humanizer.Code.OPENING_LOOP })
+    }
+
+    @Test
+    fun `两轮相同开口还不算循环`() {
+        val f = Humanizer.diagnose(
+            listOf("嗯，我在。", "嗯，你说。", "路上小心。"),
+            RelationshipStage.CLOSE,
+            3,
+        )
+        assertFalse(f.any { it.code == Humanizer.Code.OPENING_LOOP })
+    }
+
+    @Test
+    fun `连着三轮同一个词收尾会被抓出来`() {
+        val f = Humanizer.diagnose(
+            listOf("行，早点睡吧。", "知道了，早点睡吧", "那就这样，早点睡吧"),
+            RelationshipStage.CLOSE,
+            3,
+        )
+        assertTrue(f.any { it.code == Humanizer.Code.TAIL_LOOP })
+    }
+
+    @Test
+    fun `回复里的小标题和加粗算排版痕迹`() {
+        val f = Humanizer.diagnose(
+            listOf("**今天**", "### 明天\n正常"),
+            RelationshipStage.CLOSE,
+            3,
+        )
+        assertTrue(f.any { it.code == Humanizer.Code.MARKDOWN_SHAPE })
+    }
+
+    private val OPENERS = listOf(
+        "刚到家", "外面下雨了", "今天食堂的菜", "你那边的天气",
+        "路上有点堵", "我把窗关了", "刚洗完澡", "手机快没电了",
+    )
+
+    @Test
+    fun `判据只看最近十六轮，更早的旧毛病不再报`() {
+        // 前 6 条是老毛病，后面 16 条已经改好 —— 不该再写禁令
+        val old = List(6) { "嗯，知道了。" }
+        // ⚠️ 后面这 16 条的开口必须**各不相同** —— 否则测的就不是窗口，
+        //    而是"这 16 条本身就像模板"（第一版就踩了：全是同一句话）。
+        val fresh = List(16) { i -> OPENERS[i % OPENERS.size] + "，今天有点忙。" }
+        val f = Humanizer.diagnose(old + fresh, RelationshipStage.CLOSE, 3)
+        assertFalse(f.any { it.code == Humanizer.Code.OPENING_LOOP })
+    }
+
+    @Test
+    fun `开口重复的规则引用的是她自己的词，不是禁令清单`() {
+        val f = Humanizer.diagnose(
+            listOf("嗯，我在。", "嗯，你说。", "嗯，好啊。"),
+            RelationshipStage.CLOSE,
+            3,
+        )
+        val section = Humanizer.promptSection(f, RelationshipStage.CLOSE, PersonaVerbosity.NORMAL)
+        assertTrue(section.contains("换一个开头"))
+        assertTrue(section.contains("说话方式"))
+    }
 }
