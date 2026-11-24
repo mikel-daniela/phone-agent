@@ -34,8 +34,16 @@ class HostingAdapter(private val host: VirtualScreenHost) : AppHostingPort {
                             "已把「$pkg」拉进虚拟屏（用户看不见，主屏没被影响）。" +
                                 "下一步可以 tap/swipe/type 在里面操作，或 shot 看一眼。",
                         )
-                        ROOT_MISSING -> AppHostingPort.NeedsRoot(err)
-                        else -> AppHostingPort.Failed(err)
+                        else -> when (com.pocketagent.hosting.HostFailure.classify(err)) {
+                            // ★ 只有"su 没通"这一种要用户去开权限；其余都是这次
+                            //   操作本身的问题，走 Failed 让模型换做法，别叫他去重启手机。
+                            com.pocketagent.hosting.HostFailure.Kind.NO_ROOT ->
+                                AppHostingPort.NeedsRoot(com.pocketagent.hosting.HostFailure.describe(err))
+                            com.pocketagent.hosting.HostFailure.Kind.NO_DISPLAY ->
+                                AppHostingPort.NeedsRoot(com.pocketagent.hosting.HostFailure.describe(err))
+                            else ->
+                                AppHostingPort.Failed(com.pocketagent.hosting.HostFailure.describe(err))
+                        }
                     }
                 }
 
@@ -151,6 +159,10 @@ class HostingAdapter(private val host: VirtualScreenHost) : AppHostingPort {
 
     private companion object {
         /** `VirtualScreenHost.launch` 用这句表示"根本没 root"，需要走 NeedsRoot 通道。 */
-        const val ROOT_MISSING = "root 命令没返回（su 不可用？）"
+        /**
+     * ★ 已不再按字符串相等判 root —— 改成 [com.pocketagent.hosting.HostFailure.classify]。
+     *   保留常量只为不打断已有调用方。
+     */
+    const val ROOT_MISSING = "root 命令没返回（su 不可用？）"
     }
 }

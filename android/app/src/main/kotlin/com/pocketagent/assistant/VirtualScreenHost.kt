@@ -94,6 +94,15 @@ class VirtualScreenHost(
     @Volatile
     private var lastFrameAt: Long = 0L
 
+    /**
+     * 上一次 [start] 失败的原因。
+     *
+     * ★ 用户 m15452：「脱离电脑环境时，虚拟屏起不来」—— 连电脑时能看日志，
+     *   手机在手上时只有角色那句话。原来 start() 的异常被吞进 Timber 后
+     *   返回 null，上层只能说「没建起来（见日志）」，等于什么都没说。
+     */
+    private var lastError: String? = null
+
     /** 当前这块屏的 id。null = 还没建 / 已经释放。 */
     @Volatile
     var displayId: Int? = null
@@ -113,11 +122,15 @@ class VirtualScreenHost(
      */
     fun start(): Int? {
         displayId?.let { return it }
-        val dm = context.getSystemService(DisplayManager::class.java) ?: return null
+        val dm = context.getSystemService(DisplayManager::class.java) ?: run {
+            lastError = "虚拟屏没建起来：系统没有给 DisplayManager"
+            return null
+        }
         val r = runCatching {
             ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
         }.getOrElse {
             Timber.e(it, "虚拟屏：ImageReader 创建失败")
+            lastError = "虚拟屏没建起来：ImageReader 创建失败（${it.javaClass.simpleName}）"
             return null
         }
         val vd = runCatching {
@@ -137,6 +150,8 @@ class VirtualScreenHost(
             )
         }.getOrElse {
             Timber.e(it, "虚拟屏：createVirtualDisplay 失败")
+            lastError = "虚拟屏没建起来：createVirtualDisplay 被拒（" +
+                "${it.javaClass.simpleName}: ${it.message}）"
             runCatching { r.close() }
             return null
         }
@@ -179,7 +194,7 @@ class VirtualScreenHost(
         if (!VirtualScreenCommands.isValidPackage(packageName)) {
             return "包名不合法：$packageName"
         }
-        val id = start() ?: return "虚拟屏没建起来（见日志）"
+        val id = start() ?: return lastError ?: "虚拟屏没建起来（没有拿到原因）"
         val component = resolveComponent(packageName)
             ?: return "「$packageName」没有可启动的入口（可能它没有桌面图标，或包名不对）。"
 
@@ -205,7 +220,17 @@ class VirtualScreenHost(
         Thread.sleep(KILL_SETTLE_MS)
 
         val launched = actions.run(RootAction.DisplayLaunch(id, component))
-        if (!launched.ok) return "启动失败：${launched.describe()}"
+        if (!launched.ok) {
+            // ★ 124/125 是 SuShellPort 的两个特殊码（超时 / 进程没起来），
+            //   出现它们说明 su 本身没通，而不是这次 am start 被拒 ——
+            //   这两种情况用户要做的事完全不同（去授权 vs 换个应用试）。
+            if (launched.code == 124 || launched.code == 125 ||
+                looksLikeNoRoot(launched.stderr)
+            ) {
+                return "root 命令没返回（su 不可用？）：${launched.describe()}"
+            }
+            return "启动失败：${launched.describe()}"
+        }
         val out = launched.stdout
         // ⚠️ `am start` 失败时**退出码仍是 0**，只能看输出里有没有 Error。
         if (out.contains("Error") || out.contains("Exception")) {
@@ -372,8 +397,17 @@ class VirtualScreenHost(
 
     fun type(text: String): String? {
         val id = displayId ?: return "虚拟屏还没建"
+        // ★ input text 只认 ASCII：中文会一个字符都不进去、也几乎不报错，
+        //   模型以为打好了就去点发送，于是发出一条空的朋友圈。
+        com.pocketagent.hosting.HostFailure.typingNote(text)?.let { return it }
         act(RootAction.DisplayText(id, text))?.let { return it }
         return null
+    }
+
+    /** stderr 里出现这些，基本就是 su 没通（而不是被 am 拒绝）。 */
+    private fun looksLikeNoRoot(stderr: String): Boolean {
+        val t = stderr.lowercase()
+        return "permission denied" in t || "su:" in t || "not found" in t && "su" in t
     }
 
     fun key(keyCode: Int): String? {
