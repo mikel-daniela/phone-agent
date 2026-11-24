@@ -9,6 +9,7 @@ import android.media.Image
 import android.media.ImageReader
 import com.pocketagent.hosting.HostingCommands
 import com.pocketagent.rootlogic.RootAction
+import com.pocketagent.assistant.display.RootDisplayClient
 import com.pocketagent.rootlogic.RootActions
 import com.pocketagent.hosting.VirtualScreenCommands
 import timber.log.Timber
@@ -108,6 +109,20 @@ class VirtualScreenHost(
     var displayId: Int? = null
         private set
 
+    /**
+     * uid 0 的辅助进程客户端（见 RootDisplayHelper 的类注释）。
+     *
+     * ★ 为什么需要它：可信虚拟屏（FLAG_TRUSTED）只有 uid 0 建得出来。应用自己建
+     *   出来的屏第三方应用拉不进去 —— 微信会被系统扔回主屏，`launch()` 却回报
+     *   "成功"。真机实测：应用内建屏 + am start --display ⇒ 任务仍在 mDisplayId=0；
+     *   换成 root 建的屏 ⇒ 任务真的落在那块屏上。
+     */
+    private val rootClient by lazy { RootDisplayClient(context.applicationInfo.sourceDir) }
+
+    /** 这块屏是 root 辅助进程建的（而不是本进程自己建的）。 */
+    @Volatile
+    private var rootMode = false
+
     /** 这块屏上被托管过的包（释放时要清掉，见类注释第 2 条）。 */
     private val hosted = LinkedHashSet<String>()
 
@@ -122,6 +137,9 @@ class VirtualScreenHost(
      */
     fun start(): Int? {
         displayId?.let { return it }
+        // ① 先请 uid 0 建屏：只有这样建出来的屏才带 FLAG_TRUSTED，
+        //    第三方应用（微信这类）才拉得进去。
+        startViaRoot()?.let { return it }
         val dm = context.getSystemService(DisplayManager::class.java) ?: run {
             lastError = "虚拟屏没建起来：系统没有给 DisplayManager"
             return null
@@ -186,6 +204,29 @@ class VirtualScreenHost(
     }
 
     /**
+     * 让 root 辅助进程建一块带 FLAG_TRUSTED 的屏。
+     *
+     * @return 建成功返回屏 id；辅助进程不可用 / 建失败返回 null（调用方退回本进程建屏）
+     */
+    private fun startViaRoot(): Int? {
+        if (!rootClient.ensureRunning()) {
+            Timber.i("虚拟屏：root 辅助进程起不来，退回应用内建屏（第三方应用会拉不进去）")
+            lastError = "虚拟屏：root 辅助进程没起来"
+            return null
+        }
+        val result = rootClient.start(width, height, DENSITY)
+        val id = result.getOrElse {
+            Timber.w("虚拟屏：root 建屏失败 %s", it.message)
+            lastError = "虚拟屏没建起来：${it.message}"
+            return null
+        }
+        rootMode = true
+        displayId = id
+        Timber.i("虚拟屏（root）：id=%d %dx%d", id, width, height)
+        return id
+    }
+
+    /**
      * 把某个应用拉进虚拟屏。
      *
      * @return null = 成功；否则是一句"为什么不行"
@@ -197,6 +238,16 @@ class VirtualScreenHost(
         val id = start() ?: return lastError ?: "虚拟屏没建起来（没有拿到原因）"
         val component = resolveComponent(packageName)
             ?: return "「$packageName」没有可启动的入口（可能它没有桌面图标，或包名不对）。"
+
+        if (rootMode) {
+            rootClient.stopPackage(packageName)
+            Thread.sleep(KILL_SETTLE_MS)
+            val failure = rootClient.launch(id, component)
+            if (failure != null) return "启动失败：$failure"
+            hosted += packageName
+            Timber.i("虚拟屏（root）：已把 %s 拉进 display=%d", packageName, id)
+            return null
+        }
 
         // ══════════════════════════════════════════════════════════
         //  ★★ 2026-10-28 真机：必须先杀掉它，再往虚拟屏上启动
@@ -385,12 +436,14 @@ class VirtualScreenHost(
         if (x !in 0 until width || y !in 0 until height) {
             return "坐标 ($x,$y) 超出虚拟屏 ${width}x$height —— 点的会是别的地方"
         }
+        if (rootMode) return rootClient.input(id, "tap", x, y)
         act(RootAction.DisplayTap(id, x, y))?.let { return it }
         return null
     }
 
     fun swipe(x1: Int, y1: Int, x2: Int, y2: Int): String? {
         val id = displayId ?: return "虚拟屏还没建"
+        if (rootMode) return rootClient.input(id, "swipe", x1, y1, x2, y2, 300)
         act(RootAction.DisplaySwipe(id, x1, y1, x2, y2, 300))?.let { return it }
         return null
     }
@@ -400,6 +453,7 @@ class VirtualScreenHost(
         // ★ input text 只认 ASCII：中文会一个字符都不进去、也几乎不报错，
         //   模型以为打好了就去点发送，于是发出一条空的朋友圈。
         com.pocketagent.hosting.HostFailure.typingNote(text)?.let { return it }
+        if (rootMode) return rootClient.input(id, "text", text)
         act(RootAction.DisplayText(id, text))?.let { return it }
         return null
     }
@@ -412,6 +466,7 @@ class VirtualScreenHost(
 
     fun key(keyCode: Int): String? {
         val id = displayId ?: return "虚拟屏还没建"
+        if (rootMode) return rootClient.input(id, "keyevent", keyCode)
         act(RootAction.DisplayKey(id, keyCode.toString()))?.let { return it }
         return null
     }
@@ -428,6 +483,7 @@ class VirtualScreenHost(
     fun snapshotPng(maxWidth: Int = MAX_SNAPSHOT_W): ByteArray? {
         // ⚠️ 屏还没建就别说"没有画面" —— 那是两个完全不同的原因，
         //    混成一句话会让模型（和排查的人）往错的方向走。
+        if (rootMode) return rootClient.shot()
         if (reader == null) return null
         var source: Bitmap? = lastFrame
         if (source == null) {
@@ -470,6 +526,10 @@ class VirtualScreenHost(
      *    于是"无感"变成"突然满屏弹出一个微信"。
      */
     fun stop() {
+        if (rootMode) {
+            rootClient.destroy()
+            rootMode = false
+        }
         for (pkg in hosted.toList()) {
             act(RootAction.DisplayStop(pkg))?.let { Timber.w("虚拟屏：收屏前停 %s 失败（%s）", pkg, it) }
             Timber.i("虚拟屏：已清掉 %s", pkg)
